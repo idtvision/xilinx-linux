@@ -24,6 +24,7 @@ dtb-$(CONFIG_ARCH_ZYNQMP) += zynqmp-zcu104-revA.dtb
 dtb-$(CONFIG_ARCH_ZYNQMP) += zynqmp-zcu104-revC.dtb
 dtb-$(CONFIG_ARCH_ZYNQMP) += zynqmp-zcu106-revA.dtb
 dtb-$(CONFIG_ARCH_ZYNQMP) += zynqmp-zcu111-revA.dtb
+dtb-$(CONFIG_ARCH_ZYNQMP) += zynqmp-enclustra-xu8-blade1.dtb
 
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)
