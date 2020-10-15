@@ -84,7 +84,7 @@
 			rxd3-skew-ps = <420>;
 		};
 	};
-	xdma_0: axi-pcie@a0000000 {
+	xdma_0: axi-pcie@500000000 {
         #address-cells = <3>;
         #interrupt-cells = <1>;
         #size-cells = <2>;
@@ -95,9 +95,9 @@
         interrupt-parent = <&gic>;
         interrupt-names = "misc", "msi0", "msi1";
         interrupts = <0 89 4>, <0 90 4>, <0 91 4>;
-        ranges = <0x02000000 0x00000000 0xB0000000 0x0 0xB0000000 0x00000000 0x01000000>,
-            <0x43000000 0x00000005 0x00000000 0x00000005 0x00000000 0x00000000 0x01000000>;
-        reg = <0x0 0xA0000000 0x0 0x10000000>;
+        ranges = <0x02000000 0x00000000 0xa0000000 0x0 0xa0000000 0x00000000 0x08000000>,
+			<0x43000000 0x00000010 0x00000000 0x00000010 0x00000000 0x00000000 0x08000000>;
+        reg = <0x5 0x00000000 0x0 0x20000000>;
         pcie_intc_0: interrupt-controller {
             #address-cells = <0>;
             #interrupt-cells = <1>;
