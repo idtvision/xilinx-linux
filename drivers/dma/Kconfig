@@ -566,8 +566,15 @@ config XGENE_DMA
 	help
 	  Enable support for the APM X-Gene SoC DMA engine.
 
-source "drivers/dma/xilinx/Kconfig"
+source "drivers/dma/idt/Kconfig"
+config IDT_DMA
+	tristate "IDT AXI DMAS Engine"
+	depends on (ARCH_ZYNQ || MICROBLAZE || ARM64)
+	select DMA_ENGINE
+	help
+	  Enable support for DMAs.
 
+source "drivers/dma/xilinx/Kconfig"
 config XILINX_DMA
 	tristate "Xilinx AXI DMAS Engine"
 	depends on (ARCH_ZYNQ || MICROBLAZE || ARM64)

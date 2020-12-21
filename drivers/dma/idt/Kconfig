@@ -1,0 +1,8 @@
+#
+# IDT DMA Engines configuration
+#
+
+menuconfig IDT_DMA_ENGINES
+	bool "IDT DMA Engines"
+	help
+	  Enable support for IDT DMA controllers. It supports VDM (Video Data Mover).
