@@ -85,6 +85,7 @@
 		};
 	};
 	xdma_0: axi-pcie@500000000 {
+        status = "disable";
         #address-cells = <3>;
         #interrupt-cells = <1>;
         #size-cells = <2>;
