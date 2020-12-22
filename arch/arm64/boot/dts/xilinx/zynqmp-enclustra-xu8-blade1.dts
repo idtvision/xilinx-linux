@@ -84,10 +84,12 @@
 			rxd3-skew-ps = <420>;
 		};
 	};
+	/* Camera DMA */
 	vdm0: vdm@80040000 {
 		status = "okay";
 		compatible = "idt,vdm-1.00";
 		reg = <0x0 0x80020000 0x0 0x2000>;
+		devnode = "cam";
 	};
 	xdma_0: axi-pcie@500000000 {
         status = "disable";
