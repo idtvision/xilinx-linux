@@ -23,7 +23,7 @@
 #include "../dmaengine.h"
 
 static const struct of_device_id vdm_of_ids[] = {
-	{ .compatible = "idt,vdm-1.00.a", .data = 0xdeadbeef },
+	{ .compatible = "idt,vdm-1.00", .data = 0xdeadbeef },
 	{}
 };
 MODULE_DEVICE_TABLE(of, vdm_of_ids);
@@ -38,6 +38,7 @@ static int vdm_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
 	struct device_node *child, *np = pdev->dev.of_node;
+	printk(KERN_INFO"loaded vdm driver\n");
 	return 0;
 }
 
@@ -49,12 +50,13 @@ static int vdm_probe(struct platform_device *pdev)
  */
 static int vdm_remove(struct platform_device *pdev)
 {
+	printk(KERN_INFO"removed vdm driver\n");
 	return 0;
 }
 
 static struct platform_driver vdm_driver = {
 	.driver = {
-		.name = "idt-vdm",
+		.name = "vdm",
 		.of_match_table = vdm_of_ids,
 	},
 	.probe = vdm_probe,

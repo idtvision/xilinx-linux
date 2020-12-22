@@ -84,6 +84,16 @@
 			rxd3-skew-ps = <420>;
 		};
 	};
+	rtl {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		vdm0: vdm@80040000 {
+			status = "okay";
+			compatible = "idt,vdm-1.00";
+			reg = <0x80040000>;
+		};
+	};
 	xdma_0: axi-pcie@500000000 {
         status = "disable";
         #address-cells = <3>;
