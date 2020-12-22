@@ -21,11 +21,12 @@
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/debugfs.h>
 
-#include "../dmaengine.h"
+#include "vdm_controller_regs.h"
 
-/* Support hardware revision */
-#define IDT_VDM_REV 89
+#define IDT_VDM_REV VDM_CONTROLLER_REVISION
 
+/* Status Register */
+#define IDT_VDM_REG_STATUS	0x0004
 /**
  * struct vdm_device - DMA device structure
  * @reg: I/O  mapped base address
@@ -43,6 +44,42 @@ static const struct of_device_id vdm_of_ids[] = {
 	{}
 };
 MODULE_DEVICE_TABLE(of, vdm_of_ids);
+
+static int vdm_debugfs_streaming_show(void *data, u64 *val)
+{
+        struct vdm_device *vdev = data;
+        //mutex_lock(&vdev->streaming_lock);
+	*val = 0 == (STATUS_STATE_IDLE_BIT_MASK & ioread32(vdev->regs + STATUS_OFFSET));
+        //mutex_unlock(&vdev->streaming_lock);
+
+        return 0;
+}
+
+static int vdm_debugfs_streaming_write(void *data, u64 val)
+{
+        int err = 0;
+        struct vdm_device *vdev = data;
+        bool enable = (val != 0);
+
+        //dev_info(&client->dev, "%s: %s sensor\n",
+                        //__func__, (enable ? "enabling" : "disabling"));
+
+        //mutex_lock(&priv->streaming_lock);
+        if (enable) {
+		// TODO: load the program (version will depend on camera vs. mipi dma)
+		iowrite32(CONTROL_RUN_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+	} else {
+		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+	}
+        //mutex_unlock(&priv->streaming_lock);
+
+        return err;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(vdm_debugfs_streaming_fops,
+        vdm_debugfs_streaming_show,
+        vdm_debugfs_streaming_write,
+        "%lld\n");
 
 static void idt_debugfs_remove(struct platform_device *pdev)
 {
@@ -69,19 +106,15 @@ static int idt_debugfs_create(struct platform_device *pdev)
         if (vdev->debugfs_dir == NULL)
                 return -ENOMEM;
 
-#if 0
-	TODO: find out how to use this create file thing
-	if (!debugfs_create_file("streaming", 0644, priv->debugfs_dir, priv,
-                        &blade_debugfs_streaming_fops))
+	if (!debugfs_create_file("streaming", 0644, vdev->debugfs_dir, vdev,
+                        &vdm_debugfs_streaming_fops))
                 goto error;
-#endif
 
         return 0;
 
-//error:
-        //idt_debugfs_remove(priv);
-
-        //return -ENOMEM;
+error:
+        idt_debugfs_remove(pdev);
+        return -ENOMEM;
 }
 
 /**
@@ -113,8 +146,9 @@ static int vdm_probe(struct platform_device *pdev)
 	rev = ioread32(vdev->regs);
 	/* TODO: vdev is lost after this?; need to register it somewhere */
 	/* Check hardware revision */
-	if (rev != IDT_VDM_REV) {
-		dev_err(&pdev->dev, "Wrong HW version %d; support version is %d\n", rev, IDT_VDM_REV);
+	if (rev != VDM_CONTROLLER_REVISION) {
+		dev_err(&pdev->dev, "Wrong HW version %d; support version is %d\n",
+			rev, VDM_CONTROLLER_REVISION);
 		return -EFAULT;
 	}
 

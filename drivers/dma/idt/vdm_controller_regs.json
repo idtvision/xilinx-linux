@@ -1,0 +1,328 @@
+{
+  "jsonVersion": 2,
+  "registerMap": {
+    "name": "vdm_controller",
+    "description": "Microcoded DMA DataMover controller user register map.",
+    "width": 32,
+    "baseAddress": 0,
+    "registers": [
+      {
+        "type": "Register",
+        "name": "version",
+        "description": "register version",
+        "access": "READ_ONLY",
+        "addressOffset": 0,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "status",
+        "description": "DMA status",
+        "access": "READ_ONLY",
+        "addressOffset": 4,
+        "size": 32,
+        "fields": [
+          {
+            "name": "fifo_ready",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "fifo_empty",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 1,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "state_idle",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 2,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "state_post_trigger",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 3,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "tag",
+            "description": "",
+            "bitWidth": 4,
+            "bitOffset": 4,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "internal_error",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 8,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "dec_error",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 9,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "slave_error",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 10,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "ok",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 11,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "integrity_error",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 31,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "control",
+        "description": "DMA control",
+        "access": "READ_WRITE",
+        "addressOffset": 8,
+        "size": 32,
+        "fields": [
+          {
+            "name": "reset",
+            "description": "reset DMA",
+            "bitWidth": 1,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": true,
+            "enumValues": []
+          },
+          {
+            "name": "break_current",
+            "description": "Break current transfer",
+            "bitWidth": 1,
+            "bitOffset": 1,
+            "reset": 0,
+            "selfClear": true,
+            "enumValues": []
+          },
+          {
+            "name": "break_all",
+            "description": "Break all pending transfers",
+            "bitWidth": 1,
+            "bitOffset": 2,
+            "reset": 0,
+            "selfClear": true,
+            "enumValues": []
+          },
+          {
+            "name": "break_now",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 3,
+            "reset": 0,
+            "selfClear": true,
+            "enumValues": []
+          },
+          {
+            "name": "repeat",
+            "description": "Loop over",
+            "bitWidth": 1,
+            "bitOffset": 4,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "incr",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 5,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "follow",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 6,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "streaming",
+            "description": "",
+            "bitWidth": 1,
+            "bitOffset": 7,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "ip",
+            "description": "Instruction pointer to start execution from on load",
+            "bitWidth": 16,
+            "bitOffset": 8,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          },
+          {
+            "name": "run",
+            "description": "Load next command",
+            "bitWidth": 1,
+            "bitOffset": 31,
+            "reset": 0,
+            "selfClear": true,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "inst_cnt",
+        "description": "Executed instructions count since reset",
+        "access": "READ_ONLY",
+        "addressOffset": 12,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "Executed instructions count since reset",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "ip",
+        "description": "Current instruction pointer",
+        "access": "READ_ONLY",
+        "addressOffset": 16,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "last_addr",
+        "description": "Last processed frame (done in DDR)",
+        "access": "READ_ONLY",
+        "addressOffset": 32,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Register",
+        "name": "cur_addr",
+        "description": "Currently processing frame",
+        "access": "READ_ONLY",
+        "addressOffset": 36,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      },
+      {
+        "type": "Memory",
+        "depth": 1024,
+        "name": "program",
+        "description": "program",
+        "access": "READ_WRITE",
+        "addressOffset": 4096,
+        "size": 32,
+        "fields": [
+          {
+            "name": "value",
+            "description": "program",
+            "bitWidth": 32,
+            "bitOffset": 0,
+            "reset": 0,
+            "selfClear": false,
+            "enumValues": []
+          }
+        ]
+      }
+    ],
+    "revision": 89,
+    "generateRecordPorts": true
+  }
+}
