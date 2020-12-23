@@ -50,6 +50,7 @@ static int vdm_debugfs_streaming_show(void *data, u64 *val)
         struct vdm_device *vdev = data;
         //mutex_lock(&vdev->streaming_lock);
 	*val = 0 == (STATUS_STATE_IDLE_BIT_MASK & ioread32(vdev->regs + STATUS_OFFSET));
+
         //mutex_unlock(&vdev->streaming_lock);
 
         return 0;
@@ -81,6 +82,68 @@ DEFINE_SIMPLE_ATTRIBUTE(vdm_debugfs_streaming_fops,
         vdm_debugfs_streaming_write,
         "%lld\n");
 
+static ssize_t
+vdm_debugfs_status_read(struct file *file, char __user *user_buf,
+                  size_t count, loff_t *ppos)
+{
+	char *buff;
+	int desc = 0;
+	//int j;
+	ssize_t ret;
+	struct vdm_device *vdev = file->private_data;
+	unsigned status_reg;
+
+	buff = kmalloc(1024, GFP_KERNEL);
+	if (!buff)
+		return -ENOMEM;
+	status_reg = ioread32(vdev->regs + STATUS_OFFSET);
+	desc += sprintf(buff + desc,
+			"reg=0x%08X\n"
+			"fifo ready=%d\n"
+			"fifo empty=%d\n"
+			"state_idle=%d\n"
+			"state_post_trigger=%d\n"
+			"tag=%d\n"
+			"internal error=%d\n"
+			"dec error=%d\n"
+			"slave error=%d\n"
+			"ok=%d\n"
+			"integrity error=%d\n"
+			"virt_regs=%p\n",
+			status_reg,
+			(status_reg & STATUS_FIFO_READY_BIT_MASK)
+				>> STATUS_FIFO_READY_BIT_OFFSET,
+			(status_reg & STATUS_FIFO_EMPTY_BIT_MASK)
+				>> STATUS_FIFO_EMPTY_BIT_OFFSET,
+			(status_reg & STATUS_STATE_IDLE_BIT_MASK)
+				>> STATUS_STATE_IDLE_BIT_OFFSET ,
+			(status_reg & STATUS_STATE_POST_TRIGGER_BIT_MASK)
+				>> STATUS_STATE_POST_TRIGGER_BIT_OFFSET,
+			(status_reg & STATUS_TAG_BIT_MASK)
+				>> STATUS_TAG_BIT_OFFSET,
+			(status_reg & STATUS_INTERNAL_ERROR_BIT_MASK)
+				>> STATUS_INTERNAL_ERROR_BIT_OFFSET,
+			(status_reg & STATUS_DEC_ERROR_BIT_MASK)
+				>> STATUS_DEC_ERROR_BIT_OFFSET,
+			(status_reg & STATUS_SLAVE_ERROR_BIT_MASK)
+				>> STATUS_SLAVE_ERROR_BIT_OFFSET,
+			(status_reg & STATUS_OK_BIT_MASK)
+				>> STATUS_OK_BIT_OFFSET,
+			(status_reg & STATUS_INTEGRITY_ERROR_BIT_MASK)
+				>> STATUS_INTEGRITY_ERROR_BIT_OFFSET,
+			vdev->regs);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buff, desc);
+	kfree(buff);
+	return ret;
+}
+
+static const struct file_operations vdm_debugfs_status_fpos = {
+    .read = vdm_debugfs_status_read,
+    .open = simple_open,
+    .llseek = default_llseek,
+};
+
+
 static void idt_debugfs_remove(struct platform_device *pdev)
 {
 	struct vdm_device *vdev = platform_get_drvdata(pdev);
@@ -104,11 +167,14 @@ static int idt_debugfs_create(struct platform_device *pdev)
 
         vdev->debugfs_dir = debugfs_create_dir(debugfs_dir, NULL);
         if (vdev->debugfs_dir == NULL)
-                return -ENOMEM;
+		return -ENOMEM;
 
 	if (!debugfs_create_file("streaming", 0644, vdev->debugfs_dir, vdev,
-                        &vdm_debugfs_streaming_fops))
-                goto error;
+		&vdm_debugfs_streaming_fops))
+			goto error;
+	if (!debugfs_create_file("status", 0600, vdev->debugfs_dir, vdev,
+		&vdm_debugfs_status_fpos))
+			goto error;
 
         return 0;
 
