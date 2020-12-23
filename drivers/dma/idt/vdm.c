@@ -22,6 +22,7 @@
 #include <linux/debugfs.h>
 
 #include "vdm_controller_regs.h"
+#include "vdm_controller_ops.h"
 
 #define IDT_VDM_REV VDM_CONTROLLER_REVISION
 
@@ -38,6 +39,7 @@ struct vdm_device {
 	struct device *dev;
 	struct dentry *debugfs_dir;
 };
+
 
 static const struct of_device_id vdm_of_ids[] = {
 	{ .compatible = "idt,vdm-1.00" },
@@ -56,6 +58,43 @@ static int vdm_debugfs_streaming_show(void *data, u64 *val)
         return 0;
 }
 
+static const unsigned consts_idx = 0x40; /* constants begin at 0x40 * 4 */
+
+static void load_program(struct vdm_device *vdev) {
+	static const unsigned dma_addr = consts_idx + 0;
+	static const unsigned dma_size = consts_idx + 1;
+	static const unsigned dma_size_max = consts_idx + 2;
+	static const unsigned dma_buff_addr = consts_idx + 3;
+	static const unsigned buf_size = 1*1024*1024*1024U;
+	static const unsigned frame_size = 2160 * 3840;
+	static const unsigned n_frames = buf_size / frame_size;
+	static const unsigned last_frame_addr = frame_size * n_frames;
+	static const unsigned ram = PROGRAM_OFFSET;
+	unsigned prog = ram;
+	unsigned entry, label0;
+	/* Load data */
+	#define dload(d, idx) \
+		iowrite32(d, vdev->regs + ram + 4*idx);
+	dload(0, dma_addr);
+	dload(3840, dma_size);
+	#undef dload
+	/* Load instructions */
+	#define nexti(inst) \
+		iowrite32(inst, \
+				vdev->regs + prog); \
+       		prog += 4
+	#define lbl() ((prog - ram)/4)
+
+	entry = lbl();
+	nexti(zero(dma_size_max));
+	label0 = lbl();
+	nexti(add_mem(dma_size_max, dma_addr));
+	nexti(dma(0, dma_addr, dma_size));
+	nexti(br_imm(label0));
+	#undef lbl
+	#undef nexti
+}
+
 static int vdm_debugfs_streaming_write(void *data, u64 val)
 {
         int err = 0;
@@ -67,7 +106,9 @@ static int vdm_debugfs_streaming_write(void *data, u64 val)
 
         //mutex_lock(&priv->streaming_lock);
         if (enable) {
-		// TODO: load the program (version will depend on camera vs. mipi dma)
+		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+		iowrite32(0, vdev->regs + CONTROL_OFFSET);
+		load_program(vdev);
 		iowrite32(CONTROL_RUN_BIT_MASK, vdev->regs + CONTROL_OFFSET);
 	} else {
 		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
@@ -88,12 +129,12 @@ vdm_debugfs_status_read(struct file *file, char __user *user_buf,
 {
 	char *buff;
 	int desc = 0;
-	//int j;
+	int i;
 	ssize_t ret;
 	struct vdm_device *vdev = file->private_data;
 	unsigned status_reg;
 
-	buff = kmalloc(1024, GFP_KERNEL);
+	buff = kmalloc(PAGE_SIZE*2, GFP_KERNEL);
 	if (!buff)
 		return -ENOMEM;
 	status_reg = ioread32(vdev->regs + STATUS_OFFSET);
@@ -132,6 +173,20 @@ vdm_debugfs_status_read(struct file *file, char __user *user_buf,
 			(status_reg & STATUS_INTEGRITY_ERROR_BIT_MASK)
 				>> STATUS_INTEGRITY_ERROR_BIT_OFFSET,
 			vdev->regs);
+	desc += sprintf(buff + desc,
+			"VDM PROGRAM DUMP\n"
+			"----------------\n");
+	for (i = 0; i < (consts_idx*4); i += 4) {
+		unsigned int word = ioread32(vdev->regs + PROGRAM_OFFSET + i);
+		desc += sprintf(buff + desc, "%04x %08x\n", i, word);
+	}
+	desc += sprintf(buff + desc,
+			"VDM CONSTANTS DUMP\n"
+			"----------------\n");
+	for (i = (consts_idx*4); i < (consts_idx*4 + 16*4); i += 4) {
+		unsigned int word = ioread32(vdev->regs + PROGRAM_OFFSET + i);
+		desc += sprintf(buff + desc, "%04x %08x\n", i, word);
+	}
 	ret = simple_read_from_buffer(user_buf, count, ppos, buff, desc);
 	kfree(buff);
 	return ret;
