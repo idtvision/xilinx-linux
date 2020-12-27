@@ -24,6 +24,7 @@
 
 #include "vdm_controller_regs.h"
 #include "vdm_controller_ops.h"
+#include "vdm_kern_api.h"
 
 #define IDT_VDM_REV VDM_CONTROLLER_REVISION
 
@@ -266,17 +267,59 @@ vdm_poll(struct file *file, poll_table *wait)
 	return 0;
 }
 
+static int vdm_reset(struct vdm_device *vdev)
+{
+	iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+	return 0;
+}
 
 static long
 vdm_dev_ioctl(struct file *fptr, unsigned int cmd, unsigned long data)
 {
 	struct vdm_device *vdev  = fptr->private_data;
+	void __user *arg = NULL;
+	int rval = -EINVAL;
+	int err = 0;
 
-	dev_err(vdev->dev,
-            "vdm-%s ioctl not implemented",
-            vdev->node);
+	if (!vdev)
+		return err;
 
-	return 0;
+	if (_IOC_TYPE(cmd) != VDM_MAGIC) {
+		dev_err(vdev->dev, "Not a VDM ioctl");
+		return -ENOTTY;
+	}
+
+	/* check if ioctl argument is present and valid */
+	if (_IOC_DIR(cmd) != _IOC_NONE) {
+		arg = (void __user *)data;
+		if (!arg) {
+			dev_err(vdev->dev, "vdm ioctl argument is NULL Pointer");
+			return rval;
+		}
+	}
+
+	/* Access check of the argument if present */
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, arg, _IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err = !access_ok(VERIFY_READ, arg, _IOC_SIZE(cmd));
+
+	if (err) {
+		dev_err(vdev->dev, "Invalid vdm ioctl argument");
+		return -EFAULT;
+	}
+
+	switch (cmd) {
+		case VDM_IOCTL_RESET:
+			rval = vdm_reset(vdev);
+        		break;
+		default:
+			dev_err(vdev->dev,
+            			"vdm-%s ioctl not implemented",
+            			vdev->node);
+			break;
+	}
+	return rval;
 }
 
 static int
