@@ -45,6 +45,8 @@ static dev_t vdm_devt;
  * @vdm_cdev: Charachter device handle
  * @open_count: Count of char device being opened
  * @vdm_id: ID of the VDM instance
+ * @irq: IRQ number
+ * @waitq: IRQ wait queue
  * @node: name of this instance from the DT
  */
 struct vdm_device {
@@ -54,7 +56,8 @@ struct vdm_device {
 	struct cdev vdm_cdev;
 	atomic_t open_count;
 	s32 vdm_id;
-
+	int irq;
+	wait_queue_head_t waitq;
 	char node[32];
 };
 
@@ -82,6 +85,8 @@ static void load_program(struct vdm_device *vdev) {
 	static const unsigned dma_addr = consts_idx + 0;
 	static const unsigned dma_size = consts_idx + 1;
 	static const unsigned dma_size_max = consts_idx + 2;
+	static const unsigned irq_val = consts_idx + 3;
+	static const unsigned zero_val = consts_idx + 4;
 	//static const unsigned dma_buff_addr = consts_idx + 3;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	//static const unsigned frame_size = 2160 * 3840;
@@ -95,6 +100,8 @@ static void load_program(struct vdm_device *vdev) {
 		iowrite32(d, vdev->regs + ram + 4*idx);
 	dload(0, dma_addr);
 	dload(3840, dma_size);
+	dload(1, irq_val);
+	dload(0, zero_val);
 	#undef dload
 	/* Load instructions */
 	#define nexti(inst) \
@@ -108,6 +115,10 @@ static void load_program(struct vdm_device *vdev) {
 	label0 = lbl();
 	nexti(add_mem(dma_size_max, dma_addr));
 	nexti(dma(0, dma_addr, dma_size));
+	nexti(out0(irq_val)); // send an IRQ
+	nexti(out0(irq_val)); // extend pulse width
+	nexti(out0(irq_val)); // extend pulse width
+	nexti(out0(zero_val)); // turn off IRQ line
 	nexti(br_imm(label0));
 	#undef lbl
 	#undef nexti
@@ -363,6 +374,17 @@ static const struct file_operations vdm_fops = {
     .poll = vdm_poll,
 };
 
+static irqreturn_t
+vdm_irq_thread(int irq, void *dev_id)
+{
+	static unsigned cnt = 0;
+	struct vdm_device *vdev = dev_id;
+	irqreturn_t ret = IRQ_HANDLED;
+	WARN_ON(vdev->irq != irq);
+	//printk(KERN_INFO"vdm irq %d", cnt++);
+	return ret;
+}
+
 /**
  * vdm_probe - Driver probe function
  * @pdev: Pointer to the platform_device structure
@@ -377,6 +399,7 @@ static int vdm_probe(struct platform_device *pdev)
 	struct resource *io;
 	unsigned rev;
 	int err;
+	bool irq_enabled = true;
 
 	/* Allocate inst struct */
 	vdev = devm_kzalloc(&pdev->dev, sizeof(*vdev), GFP_KERNEL);
@@ -398,8 +421,27 @@ static int vdm_probe(struct platform_device *pdev)
 			rev, VDM_CONTROLLER_REVISION);
 		return -EFAULT;
 	}
+	vdev->irq = platform_get_irq(pdev, 0);
+	if (vdev->irq < 0) {
+		dev_dbg(&pdev->dev, "platform_get_irq failed");
+		irq_enabled = false;
+	}
 
 	platform_set_drvdata(pdev, vdev);
+
+	if (irq_enabled) {
+		init_waitqueue_head(&vdev->waitq);
+		/* Register IRQ thread */
+		err = devm_request_threaded_irq(&pdev->dev, vdev->irq, NULL,
+			vdm_irq_thread,
+			IRQF_ONESHOT,
+			"vdm",
+			vdev);
+		if (err < 0) {
+			dev_err(&pdev->dev, "unable to request IRQ%d", vdev->irq);
+			goto err_vdm_dev;
+		}
+	}
 
 	err = idt_debugfs_create(pdev);
 	if (err)

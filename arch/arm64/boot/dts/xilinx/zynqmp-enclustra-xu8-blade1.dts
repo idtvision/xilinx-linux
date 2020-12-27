@@ -90,6 +90,8 @@
 		compatible = "idt,vdm-1.00";
 		reg = <0x0 0x80020000 0x0 0x2000>;
 		devnode = "cam";
+		interrupt-parent = <&gic>;
+		interrupts = <0 89 4>;
 	};
 	/* MIPI0 DMA */
 	vdm1: vdm@80030000 {
@@ -97,6 +99,8 @@
 		compatible = "idt,vdm-1.00";
 		reg = <0x0 0x80030000 0x0 0x2000>;
 		devnode = "mipi0";
+		interrupt-parent = <&gic>;
+		interrupts = <0 90 4>;
 	};
 	xdma_0: axi-pcie@500000000 {
         status = "disable";
