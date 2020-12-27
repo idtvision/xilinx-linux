@@ -4,7 +4,7 @@
  * Microcoded data mover DMA
  *
  */
-
+#include <linux/cdev.h>
 #include <linux/bitops.h>
 #include <linux/dmapool.h>
 #include <linux/init.h>
@@ -16,6 +16,7 @@
 #include <linux/of_dma.h>
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
+#include <linux/poll.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
@@ -26,18 +27,34 @@
 
 #define IDT_VDM_REV VDM_CONTROLLER_REVISION
 
-/* Status Register */
-#define IDT_VDM_REG_STATUS	0x0004
+#define DRIVER_NAME "idt_vdm"
+#define DRIVER_VERSION  "1.0"
+#define DRIVER_MAX_DEV  BIT(MINORBITS)
+
+
+static struct class *vdm_class;
+static atomic_t vdm_ndevs = ATOMIC_INIT(0);
+static dev_t vdm_devt;
+
 /**
  * struct vdm_device - DMA device structure
  * @reg: I/O  mapped base address
  * @dev: Device Structure
  * @debugfs_dir: Debug FS directory ptr
+ * @vdm_cdev: Charachter device handle
+ * @open_count: Count of char device being opened
+ * @vdm_id: ID of the VDM instance
+ * @node: name of this instance from the DT
  */
 struct vdm_device {
 	void __iomem *regs;
 	struct device *dev;
 	struct dentry *debugfs_dir;
+	struct cdev vdm_cdev;
+	atomic_t open_count;
+	s32 vdm_id;
+
+	char node[32];
 };
 
 
@@ -64,11 +81,11 @@ static void load_program(struct vdm_device *vdev) {
 	static const unsigned dma_addr = consts_idx + 0;
 	static const unsigned dma_size = consts_idx + 1;
 	static const unsigned dma_size_max = consts_idx + 2;
-	static const unsigned dma_buff_addr = consts_idx + 3;
-	static const unsigned buf_size = 1*1024*1024*1024U;
-	static const unsigned frame_size = 2160 * 3840;
-	static const unsigned n_frames = buf_size / frame_size;
-	static const unsigned last_frame_addr = frame_size * n_frames;
+	//static const unsigned dma_buff_addr = consts_idx + 3;
+	//static const unsigned buf_size = 1*1024*1024*1024U;
+	//static const unsigned frame_size = 2160 * 3840;
+	//static const unsigned n_frames = buf_size / frame_size;
+	//static const unsigned last_frame_addr = frame_size * n_frames;
 	static const unsigned ram = PROGRAM_OFFSET;
 	unsigned prog = ram;
 	unsigned entry, label0;
@@ -219,6 +236,8 @@ static int idt_debugfs_create(struct platform_device *pdev)
                 return err;
         }
         snprintf(debugfs_dir, sizeof(debugfs_dir), "vdm-%s", devnode);
+	strncpy(vdev->node, devnode, sizeof(vdev->node));
+	vdev->node[sizeof(vdev->node)-1] = 0;
 
         vdev->debugfs_dir = debugfs_create_dir(debugfs_dir, NULL);
         if (vdev->debugfs_dir == NULL)
@@ -238,6 +257,69 @@ error:
         return -ENOMEM;
 }
 
+
+static unsigned int
+vdm_poll(struct file *file, poll_table *wait)
+{
+	// TODO: when ISR is added
+	// drivers/misc/xilinx_sdfec.c:1129
+	return 0;
+}
+
+
+static long
+vdm_dev_ioctl(struct file *fptr, unsigned int cmd, unsigned long data)
+{
+	struct vdm_device *vdev  = fptr->private_data;
+
+	dev_err(vdev->dev,
+            "vdm-%s ioctl not implemented",
+            vdev->node);
+
+	return 0;
+}
+
+static int
+vdm_dev_open(struct inode *iptr, struct file *fptr)
+{
+    struct vdm_device *vdm;
+
+    vdm = container_of(iptr->i_cdev, struct vdm_device, vdm_cdev);
+    if (!vdm)
+        return  -EAGAIN;
+
+    /* Only one open per device at a time */
+    if (!atomic_dec_and_test(&vdm->open_count)) {
+        atomic_inc(&vdm->open_count);
+        return -EBUSY;
+    }
+
+    fptr->private_data = vdm;
+    return 0;
+}
+
+static int
+vdm_dev_release(struct inode *iptr, struct file *fptr)
+{
+    struct vdm_device *vdm;
+
+    vdm = container_of(iptr->i_cdev, struct vdm_device, vdm_cdev);
+    if (!vdm)
+        return -EAGAIN;
+
+    atomic_inc(&vdm->open_count);
+    return 0;
+}
+
+
+static const struct file_operations vdm_fops = {
+    .owner = THIS_MODULE,
+    .open = vdm_dev_open,
+    .release = vdm_dev_release,
+    .unlocked_ioctl = vdm_dev_ioctl,
+    .poll = vdm_poll,
+};
+
 /**
  * vdm_probe - Driver probe function
  * @pdev: Pointer to the platform_device structure
@@ -248,6 +330,7 @@ static int vdm_probe(struct platform_device *pdev)
 {
 	//struct device_node *node = pdev->dev.of_node;
 	struct vdm_device *vdev;
+	struct device *dev_create;
 	struct resource *io;
 	unsigned rev;
 	int err;
@@ -257,6 +340,7 @@ static int vdm_probe(struct platform_device *pdev)
 	if (!vdev)	
 		return -ENOMEM;
 	vdev->dev = &pdev->dev;
+	vdev->vdm_id = atomic_read(&vdm_ndevs);
 
 	/* Request and map I/O memory */
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -265,7 +349,6 @@ static int vdm_probe(struct platform_device *pdev)
 		return PTR_ERR(vdev->regs);
 
 	rev = ioread32(vdev->regs);
-	/* TODO: vdev is lost after this?; need to register it somewhere */
 	/* Check hardware revision */
 	if (rev != VDM_CONTROLLER_REVISION) {
 		dev_err(&pdev->dev, "Wrong HW version %d; support version is %d\n",
@@ -279,8 +362,38 @@ static int vdm_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
+	cdev_init(&vdev->vdm_cdev, &vdm_fops);
+	vdev->vdm_cdev.owner = THIS_MODULE;
+	err = cdev_add(&vdev->vdm_cdev,
+		MKDEV(MAJOR(vdm_devt), vdev->vdm_id), 1);
+	if (err < 0) {
+		dev_err(&pdev->dev, "cdev_add failed");
+		err = -EIO;
+		goto err_vdm_dev;
+	}
+	if (!vdm_class) {
+		err = -EIO;
+		dev_err(&pdev->dev, "vdm class not created correctly");
+		goto err_vdm_cdev;
+	}
+	dev_create = device_create(vdm_class, vdev->dev,
+			MKDEV(MAJOR(vdm_devt),
+				vdev->vdm_id),
+			vdev, "vdm%d", vdev->vdm_id);
+	if (IS_ERR(dev_create)) {
+		dev_err(&pdev->dev, "unable to create device");
+		err = PTR_ERR(dev_create);
+		goto err_vdm_cdev;
+	}
+
+	atomic_set(&vdev->open_count, 1);
+	atomic_inc(&vdm_ndevs);
 	printk(KERN_INFO"Loaded vdm driver ver=%d\n", rev);
 	return 0;
+err_vdm_cdev:
+	cdev_del(&vdev->vdm_cdev);
+err_vdm_dev:
+	return err;
 }
 
 /**
@@ -293,6 +406,10 @@ static int vdm_remove(struct platform_device *pdev)
 {
 	struct vdm_device *vdev = platform_get_drvdata(pdev);
 	idt_debugfs_remove(pdev);
+	device_destroy(vdm_class,
+			MKDEV(MAJOR(vdm_devt), vdev->vdm_id));
+	cdev_del(&vdev->vdm_cdev);
+	atomic_dec(&vdm_ndevs);
 	printk(KERN_INFO"Removed vdm driver vdev=0x%p\n", vdev);
 	return 0;
 }
@@ -306,7 +423,52 @@ static struct platform_driver vdm_driver = {
 	.remove = vdm_remove,
 };
 
-module_platform_driver(vdm_driver);
+//module_platform_driver(vdm_driver);
+
+static int __init vdm_init_mod(void)
+{
+    int err;
+
+    vdm_class = class_create(THIS_MODULE, DRIVER_NAME);
+    if (IS_ERR(vdm_class)) {
+        err = PTR_ERR(vdm_class);
+        pr_err("%s : Unable to register vdm class", __func__);
+        return err;
+    }
+
+    err = alloc_chrdev_region(&vdm_devt,
+                  0, DRIVER_MAX_DEV, DRIVER_NAME);
+    if (err < 0) {
+        pr_err("%s : Unable to get major number", __func__);
+        goto err_vdm_class;
+    }
+
+    err = platform_driver_register(&vdm_driver);
+    if (err < 0) {
+        pr_err("%s Unabled to register %s driver",
+               __func__, DRIVER_NAME);
+        goto err_vdm_drv;
+    }
+    return 0;
+
+    /* Error Path */
+err_vdm_drv:
+    unregister_chrdev_region(vdm_devt, DRIVER_MAX_DEV);
+err_vdm_class:
+    class_destroy(vdm_class);
+    return err;
+}
+
+static void __exit vdm_cleanup_mod(void)
+{
+    platform_driver_unregister(&vdm_driver);
+    unregister_chrdev_region(vdm_devt, DRIVER_MAX_DEV);
+    class_destroy(vdm_class);
+    vdm_class = NULL;
+}
+
+module_init(vdm_init_mod);
+module_exit(vdm_cleanup_mod);
 
 MODULE_AUTHOR("Alex Ivanov");
 MODULE_DESCRIPTION("Video Data Mover");
