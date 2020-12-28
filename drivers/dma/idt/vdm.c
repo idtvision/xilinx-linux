@@ -47,6 +47,7 @@ static dev_t vdm_devt;
  * @vdm_id: ID of the VDM instance
  * @irq: IRQ number
  * @waitq: IRQ wait queue
+ * @line_irq: line irq happened
  * @node: name of this instance from the DT
  */
 struct vdm_device {
@@ -58,6 +59,7 @@ struct vdm_device {
 	s32 vdm_id;
 	int irq;
 	wait_queue_head_t waitq;
+	bool line_irq;
 	char node[32];
 };
 
@@ -273,9 +275,18 @@ error:
 static unsigned int
 vdm_poll(struct file *file, poll_table *wait)
 {
-	// TODO: when ISR is added
-	// drivers/misc/xilinx_sdfec.c:1129
-	return 0;
+	unsigned int mask = 0;
+	struct vdm_device *vdev = file->private_data;
+	if (!vdev)
+		return POLLNVAL | POLLHUP;
+	poll_wait(file, &vdev->waitq, wait);
+	//printk(KERN_INFO"poll called\n");
+	if (vdev->line_irq) {
+        	mask |= POLLIN | POLLRDNORM; // POLLPRI;
+		vdev->line_irq = 0;
+	}
+	
+	return mask;
 }
 
 static int vdm_reset(struct vdm_device *vdev)
@@ -381,7 +392,9 @@ vdm_irq_thread(int irq, void *dev_id)
 	struct vdm_device *vdev = dev_id;
 	irqreturn_t ret = IRQ_HANDLED;
 	WARN_ON(vdev->irq != irq);
-	//printk(KERN_INFO"vdm irq %d", cnt++);
+	if (0 == (cnt & 0xf)) printk(KERN_INFO"vdm irq %d\n", cnt++);
+	vdev->line_irq = 1;
+	wake_up_interruptible(&vdev->waitq);
 	return ret;
 }
 
