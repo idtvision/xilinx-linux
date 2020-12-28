@@ -37,6 +37,12 @@ static struct class *vdm_class;
 static atomic_t vdm_ndevs = ATOMIC_INIT(0);
 static dev_t vdm_devt;
 
+typedef enum VDM_TYPE {
+	VDM_CAM,
+	VDM_MIPI,
+	VDM_OTHER
+} VDM_TYPE;
+
 /**
  * struct vdm_device - DMA device structure
  * @reg: I/O  mapped base address
@@ -61,6 +67,7 @@ struct vdm_device {
 	wait_queue_head_t waitq;
 	bool line_irq;
 	char node[32];
+	VDM_TYPE vdm_type;
 };
 
 
@@ -91,17 +98,24 @@ static void load_program(struct vdm_device *vdev) {
 	static const unsigned zero_val = consts_idx + 4;
 	//static const unsigned dma_buff_addr = consts_idx + 3;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
-	//static const unsigned frame_size = 2160 * 3840;
+	static const unsigned line_size = 3840;
+	static const unsigned frame_size = 2160 * line_size;
 	//static const unsigned n_frames = buf_size / frame_size;
 	//static const unsigned last_frame_addr = frame_size * n_frames;
 	static const unsigned ram = PROGRAM_OFFSET;
 	unsigned prog = ram;
 	unsigned entry, label0;
+	unsigned tx_size = frame_size; 
+        bool mipi_prog = 
+		vdev->vdm_type == VDM_MIPI? line_size: frame_size;
+
+        dev_info(vdev->dev, "%s: loading %s program\n",
+                        __func__, mipi_prog?"mipi":"cam");
 	/* Load data */
 	#define dload(d, idx) \
 		iowrite32(d, vdev->regs + ram + 4*idx);
 	dload(0, dma_addr);
-	dload(3840, dma_size);
+	dload(tx_size, dma_size);
 	dload(1, irq_val);
 	dload(0, zero_val);
 	#undef dload
@@ -117,10 +131,12 @@ static void load_program(struct vdm_device *vdev) {
 	label0 = lbl();
 	nexti(add_mem(dma_size_max, dma_addr));
 	nexti(dma(0, dma_addr, dma_size));
-	nexti(out0(irq_val)); // send an IRQ
-	nexti(out0(irq_val)); // extend pulse width
-	nexti(out0(irq_val)); // extend pulse width
-	nexti(out0(zero_val)); // turn off IRQ line
+	if (!mipi_prog) {
+		nexti(out0(irq_val)); // send an IRQ
+		nexti(out0(irq_val)); // extend pulse width
+		nexti(out0(irq_val)); // extend pulse width
+		nexti(out0(zero_val)); // turn off IRQ line
+	}
 	nexti(br_imm(label0));
 	#undef lbl
 	#undef nexti
@@ -252,6 +268,14 @@ static int idt_debugfs_create(struct platform_device *pdev)
         snprintf(debugfs_dir, sizeof(debugfs_dir), "vdm-%s", devnode);
 	strncpy(vdev->node, devnode, sizeof(vdev->node));
 	vdev->node[sizeof(vdev->node)-1] = 0;
+	vdev->vdm_type = 0;
+	if (0 == strncasecmp(vdev->node, "cam", 3)) {
+		vdev->vdm_type = VDM_CAM;
+		dev_info(vdev->dev, "detected cam VDM node %s\n", vdev->node);
+	} else if (0 == strncasecmp(vdev->node, "mipi", 4)) {
+		vdev->vdm_type = VDM_MIPI;
+		dev_info(vdev->dev, "detected mipi VDM node %s\n", vdev->node);
+	}
 
         vdev->debugfs_dir = debugfs_create_dir(debugfs_dir, NULL);
         if (vdev->debugfs_dir == NULL)
@@ -392,7 +416,8 @@ vdm_irq_thread(int irq, void *dev_id)
 	struct vdm_device *vdev = dev_id;
 	irqreturn_t ret = IRQ_HANDLED;
 	WARN_ON(vdev->irq != irq);
-	if (0 == (cnt & 0xf)) printk(KERN_INFO"vdm irq %d\n", cnt++);
+	if (0 == (cnt & 0xff)) printk(KERN_INFO"vdm irq %d\n", cnt);
+	cnt++;
 	vdev->line_irq = 1;
 	wake_up_interruptible(&vdev->waitq);
 	return ret;
