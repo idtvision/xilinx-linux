@@ -85,10 +85,10 @@
 		};
 	};
 	/* Camera DMA */
-	vdm0: vdm@80040000 {
+	vdm0: vdm@81000000 {
 		status = "okay";
 		compatible = "idt,vdm-1.00";
-		reg = <0x0 0x80020000 0x0 0x2000>;
+		reg = <0x0 0x81000000 0x0 0x2000>;
 		devnode = "cam";
 		interrupt-parent = <&gic>;
 		interrupts = <0 89 4>;
