@@ -66,6 +66,7 @@ struct vdm_device {
 	int irq;
 	wait_queue_head_t waitq;
 	bool line_irq;
+	unsigned irq_cnt;
 	char node[32];
 	VDM_TYPE vdm_type;
 };
@@ -105,12 +106,12 @@ static void load_program(struct vdm_device *vdev) {
 	static const unsigned ram = PROGRAM_OFFSET;
 	unsigned prog = ram;
 	unsigned entry, label0;
-	unsigned tx_size = frame_size; 
-        bool mipi_prog = 
-		vdev->vdm_type == VDM_MIPI? line_size: frame_size;
+        bool mipi_prog = vdev->vdm_type == VDM_MIPI;
+	unsigned tx_size = frame_size; // full UHD frame
 
         dev_info(vdev->dev, "%s: loading %s program\n",
                         __func__, mipi_prog?"mipi":"cam");
+	dev_info(vdev->dev, "vdev=%p\n", vdev);
 	/* Load data */
 	#define dload(d, idx) \
 		iowrite32(d, vdev->regs + ram + 4*idx);
@@ -118,7 +119,6 @@ static void load_program(struct vdm_device *vdev) {
 	dload(tx_size, dma_size);
 	dload(1, irq_val);
 	dload(0, zero_val);
-	#undef dload
 	/* Load instructions */
 	#define nexti(inst) \
 		iowrite32(inst, \
@@ -126,18 +126,25 @@ static void load_program(struct vdm_device *vdev) {
        		prog += 4
 	#define lbl() ((prog - ram)/4)
 
-	entry = lbl();
-	nexti(zero(dma_size_max));
+	//entry = lbl();
+	//nexti(zero(dma_size_max));
 	label0 = lbl();
-	nexti(add_mem(dma_size_max, dma_addr));
+	// 4 frames in RAM buffer
+	nexti(zero(dma_addr));
 	nexti(dma(0, dma_addr, dma_size));
-	if (!mipi_prog) {
-		nexti(out0(irq_val)); // send an IRQ
-		nexti(out0(irq_val)); // extend pulse width
-		nexti(out0(irq_val)); // extend pulse width
-		nexti(out0(zero_val)); // turn off IRQ line
-	}
+	nexti(add_mem(dma_addr, dma_size));
+	nexti(dma(0, dma_addr, dma_size));
+	nexti(add_mem(dma_addr, dma_size));
+	nexti(dma(0, dma_addr, dma_size));
+	nexti(add_mem(dma_addr, dma_size));
+	nexti(dma(0, dma_addr, dma_size));
+	nexti(add_mem(dma_addr, dma_size));
+	nexti(out0(irq_val)); // send an IRQ
+	nexti(out0(irq_val)); // extend pulse width
+	nexti(out0(irq_val)); // extend pulse width
+	nexti(out0(zero_val)); // turn off IRQ line
 	nexti(br_imm(label0));
+	#undef dload
 	#undef lbl
 	#undef nexti
 }
@@ -276,6 +283,7 @@ static int idt_debugfs_create(struct platform_device *pdev)
 		vdev->vdm_type = VDM_MIPI;
 		dev_info(vdev->dev, "detected mipi VDM node %s\n", vdev->node);
 	}
+	dev_info(vdev->dev, "vdev=%p\n", vdev);
 
         vdev->debugfs_dir = debugfs_create_dir(debugfs_dir, NULL);
         if (vdev->debugfs_dir == NULL)
@@ -412,12 +420,12 @@ static const struct file_operations vdm_fops = {
 static irqreturn_t
 vdm_irq_thread(int irq, void *dev_id)
 {
-	static unsigned cnt = 0;
 	struct vdm_device *vdev = dev_id;
 	irqreturn_t ret = IRQ_HANDLED;
 	WARN_ON(vdev->irq != irq);
-	if (0 == (cnt & 0xff)) printk(KERN_INFO"vdm irq %d\n", cnt);
-	cnt++;
+	if (0 == (vdev->irq_cnt & 0xff))
+		printk(KERN_INFO"vdm %s irq %d\n", vdev->node, vdev->irq_cnt);
+	vdev->irq_cnt++;
 	vdev->line_irq = 1;
 	wake_up_interruptible(&vdev->waitq);
 	return ret;
