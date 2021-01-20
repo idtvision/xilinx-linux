@@ -536,11 +536,15 @@ static int free_net_devs(struct platform_device *pdev)
 	return 0;
 }
 
+// TODO: need to use the provate structure passed
+void __iomem *regs;
+
 static irqreturn_t
 xsm_irq_thread(int irq, void *dev_id)
 {
     //struct vdm_device *vdev = dev_id;
-    irqreturn_t ret = IRQ_HANDLED;
+    	irqreturn_t ret = IRQ_HANDLED;
+	bool link_up = false;
     //WARN_ON(vdev->irq != irq);
     /*
     if (0) {
@@ -552,7 +556,13 @@ xsm_irq_thread(int irq, void *dev_id)
     //vdev->irq_cnt++;
     //vdev->line_irq = 1;
     //wake_up_interruptible(&vdev->waitq);
-    printk("xsm irq\n");
+	link_up = (1 & ioread32(regs + 0x1c));
+    	printk("xsm irq; link=%d\n", link_up);
+	// TODO: handle both cams
+	if (link_up)
+		netif_carrier_on(xsm_devs[0]);
+	else
+		netif_carrier_off(xsm_devs[0]);
     return ret;
 }
 
@@ -560,12 +570,14 @@ static int register_net_devs(struct platform_device *pdev)
 {
 	int result, i, ret = -ENOMEM;
 	struct resource *io;
-	void __iomem *regs;
 	void __iomem *cam;
+	void __iomem *regs1;
 	unsigned rev;
 	int irq;
 	bool irq_enabled = true;
 	int err;
+	bool second_cam_enabled = true;
+	bool link_up = false;
 
 	/* Request and map I/O memory */
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -582,9 +594,21 @@ static int register_net_devs(struct platform_device *pdev)
 		return PTR_ERR(regs);
 	rev = ioread32(regs);
 	printk("reg0=%x\n", rev);
-	printk("link %s\n", (1 & ioread32(regs + 0x1c))? "up": "down");
+	link_up = (1 & ioread32(regs + 0x1c));
+	printk("link %s\n", link_up? "up": "down");
 	rev = ioread32(regs);
 	/* TODO: need to record these pointers into the dev structure */
+
+
+	/* Second camera memory regions */
+	io = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+	regs1 = devm_ioremap_resource(&pdev->dev, io);
+	if (IS_ERR(regs1)) {
+		/* Second camera is optional */
+		printk("second camera not configured\n");
+		second_cam_enabled = false;
+	} else
+		printk("second camera was detected\n");
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -608,18 +632,27 @@ static int register_net_devs(struct platform_device *pdev)
 	/* Allocate the devices */
 	xsm_devs[0] = alloc_netdev(sizeof(struct xsm_priv), "xsm%d",
 			NET_NAME_UNKNOWN, xsm_init);
-	xsm_devs[1] = alloc_netdev(sizeof(struct xsm_priv), "xsm%d",
-			NET_NAME_UNKNOWN, xsm_init);
-	if (xsm_devs[0] == NULL || xsm_devs[1] == NULL)
+	if (xsm_devs[0] == NULL)
 		goto out;
+	if (link_up)
+		netif_carrier_on(xsm_devs[0]);
+
+	if (second_cam_enabled) {
+		xsm_devs[1] = alloc_netdev(sizeof(struct xsm_priv), "xsm%d",
+				NET_NAME_UNKNOWN, xsm_init);
+		if (xsm_devs[1] == NULL)
+			goto out;
+	}
 
 	ret = -ENODEV;
-	for (i = 0; i < 2;  i++)
+	for (i = 0; i < 2;  i++) {
+		if (xsm_devs[i] == NULL) continue;
 		if ((result = register_netdev(xsm_devs[i])))
 			printk("xsm: error %i registering device \"%s\"\n",
 					result, xsm_devs[i]->name);
 		else
 			ret = 0;
+	}
    out:
 	if (ret) 
 		free_net_devs(pdev);
