@@ -94,17 +94,29 @@ MODULE_DEVICE_TABLE(of, xsm_of_ids);
 static bool xsm_link_up(void) { return 1 & ioread32(regs + 0x1c); }
 static void xsm_power_off(void) { iowrite32(0, regs + 0x04); }
 static void xsm_power_on(void) { iowrite32(0xf, regs + 0x04); }
+static unsigned xsm_cmd(void) { return ioread32(cam + 0x10); }
+/* NOTE: may sleep */
 static void xsm_set2(int cmd, unsigned p1, unsigned p2) {
+	int v;
+	//if (!xsm_link_up()) return; // Don't even try if there is no link
 	// TODO: it would be best to make this sleep
 	// when there is an outstanding command running in the camera
 	// and then wakeup when the comand is done.
 	// This will require sending a UFC message from the camera on command done.
-       	for(;ioread32(cam + 0x10);); // FIXME: uncontrolled spin
+       	v = xsm_cmd();
+	if (v) { // command is in progress or a HW timeout
+	       	//udelay(20);
+		msleep(100); // mait for 100 msecs and got to sleep
+		v = xsm_cmd();
+		if (v) {
+			printk("xsm: cmd timout 0x%x\n", v);
+			return;
+		}
+	}	
        	iowrite32(p1, cam + 0x18);
        	iowrite32(p2, cam + 0x1c);
        	iowrite32(cmd, cam + 0x14);
        	iowrite32(1, cam + 0x10);
-       	for(;ioread32(cam + 0x10);); // FIXME: uncontrolled spin
 }
 static void xsm_set1(int cmd, unsigned p1) { xsm_set2(cmd, p1, 0); }
 static void xsm_set(int cmd) { xsm_set2(cmd, 0, 0); }
@@ -114,6 +126,7 @@ static void xsm_restart(void) { xsm_set(2); }
 static void xsm_stop(void) { xsm_set(15); }
 static void xsm_exposure(unsigned p1) { xsm_set1(1, p1); }
 static void xsm_fps(unsigned p1) { xsm_set1(3, p1); }
+static void xsm_test_pattern(unsigned p1) { xsm_set1(6, p1); }
 
 // TODO: this should go into the provate structure
 static struct dentry *xsm_debugfs_dir = NULL;
@@ -134,6 +147,7 @@ static int xsm_debugfs_status_write(void *data, u64 val)
 		case 1: xsm_exposure(param); break;
 		case 2: xsm_restart(); break;
 		case 3: xsm_fps(param); break;
+		case 6: xsm_test_pattern(param); break;
 		case 15: xsm_stop(); break;
 		default: {
 			printk("xsm unknown command %lld\n", val);
