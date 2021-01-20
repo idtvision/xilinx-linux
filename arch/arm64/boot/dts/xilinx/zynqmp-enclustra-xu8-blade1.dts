@@ -104,6 +104,17 @@
 		/* rising edge */
 		interrupts = <0 90 1>;
 	};
+	/* XStreamMini Camera */
+	xsm0: xsm@8102000 {
+		status = "okay";
+		compatible = "idt,xsm-1.00";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reg = <0x0 0x81020000 0x0 0x10 0x0 0x81010000 0x0 0x10>;
+		devnode = "xsm0";
+		interrupt-parent = <&gic>;
+		interrupts = <0 91 1>;
+	};
 	xdma_0: axi-pcie@500000000 {
         status = "disable";
         #address-cells = <3>;

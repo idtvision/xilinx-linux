@@ -423,8 +423,11 @@ vdm_irq_thread(int irq, void *dev_id)
 	struct vdm_device *vdev = dev_id;
 	irqreturn_t ret = IRQ_HANDLED;
 	WARN_ON(vdev->irq != irq);
-	if (0 == (vdev->irq_cnt & 0xff))
-		printk(KERN_INFO"vdm %s irq %d\n", vdev->node, vdev->irq_cnt);
+	if (0) {
+		if (0 == (vdev->irq_cnt & 0xff))
+			printk(KERN_INFO"vdm %s irq %d\n",
+				vdev->node, vdev->irq_cnt);
+	}
 	vdev->irq_cnt++;
 	vdev->line_irq = 1;
 	wake_up_interruptible(&vdev->waitq);

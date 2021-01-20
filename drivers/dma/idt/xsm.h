@@ -32,5 +32,3 @@
 
 /* Default timeout period */
 #define XSM_TIMEOUT 5   /* In jiffies */
-
-extern struct net_device *xsm_devs[];
