@@ -536,7 +536,7 @@ static int free_net_devs(struct platform_device *pdev)
 	return 0;
 }
 
-// TODO: need to use the provate structure passed
+// TODO: need to use the private structure passed
 void __iomem *regs;
 
 static irqreturn_t
@@ -545,6 +545,9 @@ xsm_irq_thread(int irq, void *dev_id)
     //struct vdm_device *vdev = dev_id;
     	irqreturn_t ret = IRQ_HANDLED;
 	bool link_up = false;
+	unsigned lsb, lsb1;
+	unsigned msb;
+
     //WARN_ON(vdev->irq != irq);
     /*
     if (0) {
@@ -563,6 +566,12 @@ xsm_irq_thread(int irq, void *dev_id)
 		netif_carrier_on(xsm_devs[0]);
 	else
 		netif_carrier_off(xsm_devs[0]);
+	lsb = ioread32(regs + 0x28);
+	lsb1 = ioread32(regs + 0x2c);
+	msb = ioread32(regs + 0x30);
+	if (lsb == 0x13 && msb == 0x11111111) printk("beacon\n");
+	else printk("data=0x%x at 0x%x\n", (lsb1<<16) | (lsb >> 16), lsb&0xffff);
+	iowrite32(1, regs + 0x24); // clear received packet regs
     return ret;
 }
 
