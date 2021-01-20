@@ -246,7 +246,7 @@ vdm_debugfs_status_read(struct file *file, char __user *user_buf,
 	return ret;
 }
 
-static const struct file_operations vdm_debugfs_status_fpos = {
+static const struct file_operations vdm_debugfs_status_fops = {
     .read = vdm_debugfs_status_read,
     .open = simple_open,
     .llseek = default_llseek,
@@ -293,7 +293,7 @@ static int idt_debugfs_create(struct platform_device *pdev)
 		&vdm_debugfs_streaming_fops))
 			goto error;
 	if (!debugfs_create_file("status", 0600, vdev->debugfs_dir, vdev,
-		&vdm_debugfs_status_fpos))
+		&vdm_debugfs_status_fops))
 			goto error;
 
         return 0;

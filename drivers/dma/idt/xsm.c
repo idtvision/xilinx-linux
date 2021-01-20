@@ -27,13 +27,15 @@
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
 
+#include <linux/debugfs.h>
+
 #define XSM_DEBUG 1
 #include "xsm.h"
 
 #include <linux/in6.h>
 #include <asm/checksum.h>
 
-#define DRIVER_NAME "xsm_vdm"
+#define DRIVER_NAME "xsm"
 #define DRIVER_VERSION  "1.0"
 
 /*
@@ -78,11 +80,73 @@ struct xsm_priv {
 
 static struct net_device *xsm_devs[2];
 
+// TODO: need to use the private structure passed
+static void __iomem *regs;
+
 static const struct of_device_id xsm_of_ids[] = {
     { .compatible = "idt,xsm-1.00" },
     {}
 };
 MODULE_DEVICE_TABLE(of, xsm_of_ids);
+
+/* Camera operations */
+static bool xsm_link_up(void) {
+	return 1 & ioread32(regs + 0x1c);
+}
+
+// TODO: this should go into the provate structure
+static struct dentry *xsm_debugfs_dir = NULL;
+
+static int xsm_debugfs_status_read(void *data, u64 *val)
+{
+        *val = xsm_link_up();
+        return 0;
+}
+
+static int xsm_debugfs_status_write(void *data, u64 val)
+{
+	int err = 0;
+	printk("xsm status write %lld\n", val);
+	return err;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(xsm_debugfs_status_fops,
+        xsm_debugfs_status_read,
+        xsm_debugfs_status_write,
+        "%lld\n");
+
+static void xsm_debugfs_remove(struct platform_device *pdev)
+{
+        debugfs_remove_recursive(xsm_debugfs_dir);
+        xsm_debugfs_dir = NULL;
+}
+
+static int xsm_debugfs_create(struct platform_device *pdev)
+{
+	const char *devnode;
+	int err;
+	char debugfs_dir[32];
+	
+	// TODO: need to use the platfrom proivate data here
+	
+	err = of_property_read_string(pdev->dev.of_node, "devnode", &devnode);
+	if (err) {
+			dev_err(&pdev->dev, "devnode not in DT\n");
+			return err;
+	}
+	snprintf(debugfs_dir, sizeof(debugfs_dir), "xsm-%s", devnode);
+	dev_info(&pdev->dev, "detected xsm node %s\n", devnode);
+	xsm_debugfs_dir = debugfs_create_dir(debugfs_dir, NULL);
+	if (xsm_debugfs_dir == NULL)
+        	return -ENOMEM;
+	if (!debugfs_create_file("status", 0600, xsm_debugfs_dir, pdev,
+		&xsm_debugfs_status_fops))
+		goto error;
+	return 0;
+error:
+	xsm_debugfs_remove(pdev);
+	return -ENOMEM;
+}
 
 /*
  * Set up a device's packet pool.
@@ -525,6 +589,7 @@ static void xsm_init(struct net_device *dev)
 static int free_net_devs(struct platform_device *pdev)
 {
 	int i;
+	xsm_debugfs_remove(pdev);
     
 	for (i = 0; i < 2;  i++) {
 		if (xsm_devs[i]) {
@@ -535,9 +600,6 @@ static int free_net_devs(struct platform_device *pdev)
 	}
 	return 0;
 }
-
-// TODO: need to use the private structure passed
-void __iomem *regs;
 
 static irqreturn_t
 xsm_irq_thread(int irq, void *dev_id)
@@ -559,7 +621,7 @@ xsm_irq_thread(int irq, void *dev_id)
     //vdev->irq_cnt++;
     //vdev->line_irq = 1;
     //wake_up_interruptible(&vdev->waitq);
-	link_up = (1 & ioread32(regs + 0x1c));
+	link_up = xsm_link_up();
     	printk("xsm irq; link=%d\n", link_up);
 	// TODO: handle both cams
 	if (link_up)
@@ -603,7 +665,7 @@ static int register_net_devs(struct platform_device *pdev)
 		return PTR_ERR(regs);
 	rev = ioread32(regs);
 	printk("reg0=%x\n", rev);
-	link_up = (1 & ioread32(regs + 0x1c));
+	link_up = xsm_link_up();
 	printk("link %s\n", link_up? "up": "down");
 	rev = ioread32(regs);
 	/* TODO: need to record these pointers into the dev structure */
@@ -631,7 +693,7 @@ static int register_net_devs(struct platform_device *pdev)
 				xsm_irq_thread,
 				IRQF_ONESHOT,
 				"xsm",
-				0 /* vdev */);
+				NULL /* vdev */);
 		if (err < 0) {
 			dev_err(&pdev->dev, "unable to request IRQ%d", irq);
 			return err;
@@ -662,6 +724,7 @@ static int register_net_devs(struct platform_device *pdev)
 		else
 			ret = 0;
 	}
+	ret = xsm_debugfs_create(pdev);
    out:
 	if (ret) 
 		free_net_devs(pdev);
