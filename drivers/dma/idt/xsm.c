@@ -82,6 +82,7 @@ static struct net_device *xsm_devs[2];
 
 // TODO: need to use the private structure passed
 static void __iomem *regs;
+static void __iomem *cam;
 
 static const struct of_device_id xsm_of_ids[] = {
     { .compatible = "idt,xsm-1.00" },
@@ -90,9 +91,29 @@ static const struct of_device_id xsm_of_ids[] = {
 MODULE_DEVICE_TABLE(of, xsm_of_ids);
 
 /* Camera operations */
-static bool xsm_link_up(void) {
-	return 1 & ioread32(regs + 0x1c);
+static bool xsm_link_up(void) { return 1 & ioread32(regs + 0x1c); }
+static void xsm_power_off(void) { iowrite32(0, regs + 0x04); }
+static void xsm_power_on(void) { iowrite32(0xf, regs + 0x04); }
+static void xsm_set2(int cmd, unsigned p1, unsigned p2) {
+	// TODO: it would be best to make this sleep
+	// when there is an outstanding command running in the camera
+	// and then wakeup when the comand is done.
+	// This will require sending a UFC message from the camera on command done.
+       	for(;ioread32(cam + 0x10);); // FIXME: uncontrolled spin
+       	iowrite32(p1, cam + 0x18);
+       	iowrite32(p2, cam + 0x1c);
+       	iowrite32(cmd, cam + 0x14);
+       	iowrite32(1, cam + 0x10);
+       	for(;ioread32(cam + 0x10);); // FIXME: uncontrolled spin
 }
+static void xsm_set1(int cmd, unsigned p1) { xsm_set2(cmd, p1, 0); }
+static void xsm_set(int cmd) { xsm_set2(cmd, 0, 0); }
+
+// The following encode the set command values
+static void xsm_restart(void) { xsm_set(2); }
+static void xsm_stop(void) { xsm_set(15); }
+static void xsm_exposure(unsigned p1) { xsm_set1(1, p1); }
+static void xsm_fps(unsigned p1) { xsm_set1(3, p1); }
 
 // TODO: this should go into the provate structure
 static struct dentry *xsm_debugfs_dir = NULL;
@@ -106,7 +127,19 @@ static int xsm_debugfs_status_read(void *data, u64 *val)
 static int xsm_debugfs_status_write(void *data, u64 val)
 {
 	int err = 0;
-	printk("xsm status write %lld\n", val);
+	unsigned param = val >> 32;
+	switch (val&0xffffffff) {
+		case 0xdeadbeef: xsm_power_off(); break;
+		case 0xc001cafe: xsm_power_on(); break;
+		case 1: xsm_exposure(param); break;
+		case 2: xsm_restart(); break;
+		case 3: xsm_fps(param); break;
+		case 15: xsm_stop(); break;
+		default: {
+			printk("xsm unknown command %lld\n", val);
+			break;
+		}
+	}
 	return err;
 }
 
@@ -641,7 +674,6 @@ static int register_net_devs(struct platform_device *pdev)
 {
 	int result, i, ret = -ENOMEM;
 	struct resource *io;
-	void __iomem *cam;
 	void __iomem *regs1;
 	unsigned rev;
 	int irq;
