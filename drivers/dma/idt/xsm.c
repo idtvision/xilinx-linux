@@ -536,6 +536,26 @@ static int free_net_devs(struct platform_device *pdev)
 	return 0;
 }
 
+static irqreturn_t
+xsm_irq_thread(int irq, void *dev_id)
+{
+    //struct vdm_device *vdev = dev_id;
+    irqreturn_t ret = IRQ_HANDLED;
+    //WARN_ON(vdev->irq != irq);
+    /*
+    if (0) {
+        if (0 == (vdev->irq_cnt & 0xff))
+            printk(KERN_INFO"vdm %s irq %d\n",
+                vdev->node, vdev->irq_cnt);
+    }
+    */
+    //vdev->irq_cnt++;
+    //vdev->line_irq = 1;
+    //wake_up_interruptible(&vdev->waitq);
+    printk("xsm irq\n");
+    return ret;
+}
+
 static int register_net_devs(struct platform_device *pdev)
 {
 	int result, i, ret = -ENOMEM;
@@ -544,6 +564,8 @@ static int register_net_devs(struct platform_device *pdev)
 	void __iomem *cam;
 	unsigned rev;
 	int irq;
+	bool irq_enabled = true;
+	int err;
 
 	/* Request and map I/O memory */
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -568,6 +590,19 @@ static int register_net_devs(struct platform_device *pdev)
 	if (irq < 0) {
 		printk("xsm: platform get irq failed");
 		return irq;
+	}
+	if (irq_enabled) {
+		// init_waitqueue_head(&vdev->waitq);
+		/* Register IRQ thread */
+		err = devm_request_threaded_irq(&pdev->dev, irq, NULL,
+				xsm_irq_thread,
+				IRQF_ONESHOT,
+				"xsm",
+				0 /* vdev */);
+		if (err < 0) {
+			dev_err(&pdev->dev, "unable to request IRQ%d", irq);
+			return err;
+		}
 	}
 
 	/* Allocate the devices */
