@@ -45,7 +45,8 @@ typedef enum VDM_TYPE {
 
 /**
  * struct vdm_device - DMA device structure
- * @reg: I/O  mapped base address
+ * @regs: I/O  mapped base address of the VDM regs
+ * @regs1: I/O  mapped base address of the aux regs block
  * @dev: Device Structure
  * @debugfs_dir: Debug FS directory ptr
  * @vdm_cdev: Charachter device handle
@@ -58,6 +59,7 @@ typedef enum VDM_TYPE {
  */
 struct vdm_device {
 	void __iomem *regs;
+	void __iomem *regs1;
 	struct device *dev;
 	struct dentry *debugfs_dir;
 	struct cdev vdm_cdev;
@@ -91,12 +93,18 @@ static int vdm_debugfs_streaming_show(void *data, u64 *val)
 
 static const unsigned consts_idx = 0x40; /* constants begin at 0x40 * 4 */
 
-static void load_program(struct vdm_device *vdev) {
+
+// @op: 0 (main), 1(calibration, not on MIPI node)
+// @cal_offs: start writing to the DDR with this offset
+static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs) {
 	static const unsigned dma_addr = consts_idx + 0;
 	static const unsigned dma_size = consts_idx + 1;
 	static const unsigned dma_size_max = consts_idx + 2;
 	static const unsigned irq_val = consts_idx + 3;
 	static const unsigned zero_val = consts_idx + 4;
+	static const unsigned cal_addr = consts_idx + 5;
+	static const unsigned cal_size = consts_idx + 6;
+	static const unsigned cal_start_addr = consts_idx + 7;
 	//static const unsigned dma_buff_addr = consts_idx + 3;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	static const unsigned line_size = 3840;
@@ -108,10 +116,9 @@ static void load_program(struct vdm_device *vdev) {
 	unsigned entry, label0;
         bool mipi_prog = vdev->vdm_type == VDM_MIPI;
 	unsigned tx_size = frame_size; // full UHD frame
+	unsigned cal_tx_size = frame_size*20/8; // full UHD frame 20 bits per pixel
+	int i;
 
-        dev_info(vdev->dev, "%s: loading %s program\n",
-                        __func__, mipi_prog?"mipi":"cam");
-	dev_info(vdev->dev, "vdev=%p\n", vdev);
 	/* Load data */
 	#define dload(d, idx) \
 		iowrite32(d, vdev->regs + ram + 4*idx);
@@ -125,25 +132,67 @@ static void load_program(struct vdm_device *vdev) {
 				vdev->regs + prog); \
        		prog += 4
 	#define lbl() ((prog - ram)/4)
+	static const unsigned cal_base_addr = 512*1024*1024;
+	if (mipi_prog) {
+		//dload(3, irq_val); // disable calibration
+		//dload(2, zero_val); // siable cal
+		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
+		dload(cal_tx_size/4, cal_size);
+		label0 = lbl();
+		nexti(zero(dma_addr));
+		// 4 frames in RAM buffer
+		for (i = 0; i < 4; i++) {
+			nexti(dma(0, dma_addr, dma_size));
+			nexti(assign_mem(cal_addr, cal_start_addr));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(dma_addr, dma_size));
+		}
 
-	//entry = lbl();
-	//nexti(zero(dma_size_max));
-	label0 = lbl();
-	// 4 frames in RAM buffer
-	nexti(zero(dma_addr));
-	nexti(dma(0, dma_addr, dma_size));
-	nexti(add_mem(dma_addr, dma_size));
-	nexti(dma(0, dma_addr, dma_size));
-	nexti(add_mem(dma_addr, dma_size));
-	nexti(dma(0, dma_addr, dma_size));
-	nexti(add_mem(dma_addr, dma_size));
-	nexti(dma(0, dma_addr, dma_size));
-	nexti(add_mem(dma_addr, dma_size));
-	nexti(out0(irq_val)); // send an IRQ
-	nexti(out0(irq_val)); // extend pulse width
-	nexti(out0(irq_val)); // extend pulse width
-	nexti(out0(zero_val)); // turn off IRQ line
-	nexti(br_imm(label0));
+		//nexti(add_mem(dma_addr, dma_size));
+		for (i = 0; i < 3; i++)
+			nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
+		nexti(out0(zero_val)); // turn off IRQ line
+		nexti(br_imm(label0));
+        	dev_info(vdev->dev, "load mipi program\n");
+		return;
+	} else if (op == 1) {
+		dload(cal_base_addr + cal_offs, cal_addr);
+		// calibration comes in 8MB chunks
+		// here one chunk is loaded, the program is hung
+		// 4 times use 2 MB here to fit into 23 bits data mover limit
+		dload(2*1024*1024, cal_size);
+		nexti(dma(0, cal_addr, cal_size));
+		nexti(add_mem(cal_addr, cal_size));
+		nexti(dma(0, cal_addr, cal_size));
+		nexti(add_mem(cal_addr, cal_size));
+		nexti(dma(0, cal_addr, cal_size));
+		nexti(add_mem(cal_addr, cal_size));
+		nexti(dma(0, cal_addr, cal_size));
+		nexti(add_mem(cal_addr, cal_size));
+		nexti(hang());
+        	dev_info(vdev->dev, "load cal program\n");
+		return;
+	} else {
+		label0 = lbl();
+		nexti(zero(dma_addr));
+		// 4 frames in RAM buffer
+		for (i = 0; i < 4; i++) {
+			nexti(dma(0, dma_addr, dma_size));
+			nexti(add_mem(dma_addr, dma_size));
+		}
+		for (i = 0; i < 3; i++)
+			nexti(out0(irq_val)); // send an IRQ
+		nexti(out0(zero_val)); // turn off IRQ line
+		nexti(br_imm(label0));
+        	dev_info(vdev->dev, "load cam program\n");
+		return;
+	}
 	#undef dload
 	#undef lbl
 	#undef nexti
@@ -153,16 +202,24 @@ static int vdm_debugfs_streaming_write(void *data, u64 val)
 {
         int err = 0;
         struct vdm_device *vdev = data;
-        bool enable = (val != 0);
+	unsigned code = val & 0xffffffff;
+	unsigned param = val >> 32;
+        bool load_cal = code == 2;
+        bool enable = code == 1;
 
         //dev_info(&client->dev, "%s: %s sensor\n",
                         //__func__, (enable ? "enabling" : "disabling"));
 
         //mutex_lock(&priv->streaming_lock);
-        if (enable) {
+	if (load_cal) {
 		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
 		iowrite32(0, vdev->regs + CONTROL_OFFSET);
-		load_program(vdev);
+		load_program(vdev, 1, param);
+		iowrite32(CONTROL_RUN_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+	} else if (enable) {
+		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
+		iowrite32(0, vdev->regs + CONTROL_OFFSET);
+		load_program(vdev, 0, 0);
 		iowrite32(CONTROL_RUN_BIT_MASK, vdev->regs + CONTROL_OFFSET);
 	} else {
 		iowrite32(CONTROL_RESET_BIT_MASK, vdev->regs + CONTROL_OFFSET);
@@ -470,6 +527,15 @@ static int vdm_probe(struct platform_device *pdev)
 			rev, VDM_CONTROLLER_REVISION);
 		return -EFAULT;
 	}
+
+	/* Map the aux regs block */
+	io = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	vdev->regs1 = devm_ioremap_resource(&pdev->dev, io);
+	if (IS_ERR(vdev->regs1)) {
+		dev_err(&pdev->dev, "aux regs are not available");
+		vdev->regs1 = NULL;
+	}
+
 	vdev->irq = platform_get_irq(pdev, 0);
 	if (vdev->irq < 0) {
 		dev_dbg(&pdev->dev, "platform_get_irq failed");

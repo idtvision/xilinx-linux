@@ -98,7 +98,9 @@
 	vdm1: vdm@80030000 {
 		status = "okay";
 		compatible = "idt,vdm-1.00";
-		reg = <0x0 0x80030000 0x0 0x2000>;
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reg = <0x0 0x80030000 0x0 0x2000 0x0 0x80020000 0x0 0x10>;
 		devnode = "mipi0";
 		interrupt-parent = <&gic>;
 		/* rising edge */

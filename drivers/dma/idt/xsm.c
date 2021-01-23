@@ -96,17 +96,19 @@ static void xsm_power_off(void) { iowrite32(0, regs + 0x04); }
 static void xsm_power_on(void) { iowrite32(0xf, regs + 0x04); }
 static unsigned xsm_cmd(void) { return ioread32(cam + 0x10); }
 /* NOTE: may sleep */
-static void xsm_set2(int cmd, unsigned p1, unsigned p2) {
+
+static void xsm_op(int cmd, unsigned p1, unsigned p2, unsigned op) {
 	int v;
-	//if (!xsm_link_up()) return; // Don't even try if there is no link
+	if (!xsm_link_up()) return; // Will not get a response if there is no link
 	// TODO: it would be best to make this sleep
 	// when there is an outstanding command running in the camera
 	// and then wakeup when the comand is done.
-	// This will require sending a UFC message from the camera on command done.
+	// This will require sending a UFC message from the camera on command done
+	// and waiting for the IRQ here
        	v = xsm_cmd();
 	if (v) { // command is in progress or a HW timeout
 	       	//udelay(20);
-		msleep(100); // mait for 100 msecs and got to sleep
+		msleep(100); // goto sleep for 100 msec
 		v = xsm_cmd();
 		if (v) {
 			printk("xsm: cmd timout 0x%x\n", v);
@@ -116,10 +118,28 @@ static void xsm_set2(int cmd, unsigned p1, unsigned p2) {
        	iowrite32(p1, cam + 0x18);
        	iowrite32(p2, cam + 0x1c);
        	iowrite32(cmd, cam + 0x14);
-       	iowrite32(1, cam + 0x10);
+       	iowrite32(op, cam + 0x10);
 }
+static void xsm_set2(int cmd, unsigned p1, unsigned p2) { xsm_op(cmd, p1, p2, 1); }
 static void xsm_set1(int cmd, unsigned p1) { xsm_set2(cmd, p1, 0); }
 static void xsm_set(int cmd) { xsm_set2(cmd, 0, 0); }
+static int xsm_get(int cmd, unsigned p) {
+	int cmpl_cnt = 0;
+	xsm_op(cmd, p, 0, 2);
+	// Wait for completion
+	do {
+		int v;
+		v = xsm_cmd();
+		if (!v) break;
+		msleep(10);
+		if (cmpl_cnt > 100) {
+			printk("xsm: get timout\n");
+			return -1;
+		}
+		cmpl_cnt++;
+	} while(1);
+	return ioread32(cam + 0x1c); // result of the "get" camera command
+}
 
 // The following encode the set command values
 static void xsm_restart(void) { xsm_set(2); }
@@ -127,6 +147,7 @@ static void xsm_stop(void) { xsm_set(15); }
 static void xsm_exposure(unsigned p1) { xsm_set1(1, p1); }
 static void xsm_fps(unsigned p1) { xsm_set1(3, p1); }
 static void xsm_test_pattern(unsigned p1) { xsm_set1(6, p1); }
+static void xsm_load_cal(unsigned p1) { xsm_get(14, p1); }
 
 // TODO: this should go into the provate structure
 static struct dentry *xsm_debugfs_dir = NULL;
@@ -148,6 +169,7 @@ static int xsm_debugfs_status_write(void *data, u64 val)
 		case 2: xsm_restart(); break;
 		case 3: xsm_fps(param); break;
 		case 6: xsm_test_pattern(param); break;
+		case 14: xsm_load_cal(param); break;
 		case 15: xsm_stop(); break;
 		default: {
 			printk("xsm unknown command %lld\n", val);
@@ -174,7 +196,7 @@ static int xsm_debugfs_create(struct platform_device *pdev)
 	int err;
 	char debugfs_dir[32];
 	
-	// TODO: need to use the platfrom proivate data here
+	// TODO: need to use the platfrom private data here
 	
 	err = of_property_read_string(pdev->dev.of_node, "devnode", &devnode);
 	if (err) {
@@ -656,7 +678,7 @@ xsm_irq_thread(int irq, void *dev_id)
 	bool link_up = false;
 	unsigned lsb, lsb1;
 	unsigned msb;
-
+	unsigned reg9;
     //WARN_ON(vdev->irq != irq);
     /*
     if (0) {
@@ -680,7 +702,8 @@ xsm_irq_thread(int irq, void *dev_id)
 	msb = ioread32(regs + 0x30);
 	if (lsb == 0x13 && msb == 0x11111111) printk("beacon\n");
 	else printk("data=0x%x at 0x%x\n", (lsb1<<16) | (lsb >> 16), lsb&0xffff);
-	iowrite32(1, regs + 0x24); // clear received packet regs
+	reg9 = ioread32(regs + 0x24);
+	iowrite32(reg9|1, regs + 0x24); // clear received packet regs
     return ret;
 }
 
