@@ -139,10 +139,13 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
 		dload(cal_tx_size/4, cal_size);
 		label0 = lbl();
-		nexti(zero(dma_addr));
+		//nexti(zero(dma_addr));
 		// 4 frames in RAM buffer
 		for (i = 0; i < 4; i++) {
+			// send frame
+			nexti(in0(dma_addr)); 
 			nexti(dma(0, dma_addr, dma_size));
+			// send calibration (in 4 chunks)
 			nexti(assign_mem(cal_addr, cal_start_addr));
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(cal_addr, cal_size));
@@ -151,7 +154,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(cal_addr, cal_size));
 			nexti(dma(1, cal_addr, cal_size));
-			nexti(add_mem(dma_addr, dma_size));
+			//nexti(add_mem(dma_addr, dma_size));
 		}
 
 		//nexti(add_mem(dma_addr, dma_size));
@@ -181,9 +184,12 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	} else {
 		label0 = lbl();
 		nexti(zero(dma_addr));
-		// 4 frames in RAM buffer
-		for (i = 0; i < 4; i++) {
+		// 20 frames in RAM buffer
+		// TODO: will need to wait for a frame to finish processing
+		//  (maybe) using the tags, which are returned on the status interface
+		for (i = 0; i < 20; i++) {
 			nexti(dma(0, dma_addr, dma_size));
+			nexti(out1(dma_addr));
 			nexti(add_mem(dma_addr, dma_size));
 		}
 		for (i = 0; i < 3; i++)

@@ -89,7 +89,6 @@ static const unsigned op_assign_imm = 0x0c000000;
 inline unsigned assign_imm(unsigned char mem_ptr, unsigned short value) {
     return op_assign_imm | (mem_ptr << 16) | value;
 }
-// TODO: not this op is broken, waiting on rebuild
 // op 13 -- assign from memory
 // arg0 -- mem_ptr
 // arg1 -- src_ptr
@@ -97,6 +96,13 @@ inline unsigned assign_imm(unsigned char mem_ptr, unsigned short value) {
 static const unsigned op_assign_mem = 0x0d000000;
 inline unsigned assign_mem(unsigned char mem_ptr, unsigned char src_ptr) {
     return op_assign_mem | (mem_ptr << 16) | (src_ptr << 8);
+}
+// op 14 -- output value to verilog port out1
+// arg0 -- addr_ptr
+// result -- out1 = *addr_ptr
+static const unsigned op_out1 = 0x0e000000;
+inline unsigned out1(unsigned addr_ptr) {
+    return op_out1 | (addr_ptr << 16);
 }
 // TODO: add branch if less with immediate to support counters!
 // This hangs the FSM
