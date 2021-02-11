@@ -106,6 +106,18 @@
 		/* rising edge */
 		interrupts = <0 93 1>;
 	};
+	/* MIPI2 DMA */
+	vdm2: vdm@80040000 {
+		status = "okay";
+		compatible = "idt,vdm-1.00";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reg = <0x0 0x80040000 0x0 0x2000 0x0 0x80000000 0x0 0x10>;
+		devnode = "mipi1";
+		interrupt-parent = <&gic>;
+		/* rising edge */
+		interrupts = <0 95 1>;
+	};
 	/* XStreamMini Camera */
 	xsm0: xsm@8102000 {
 		status = "okay";

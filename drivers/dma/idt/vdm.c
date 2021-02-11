@@ -40,6 +40,7 @@ static dev_t vdm_devt;
 typedef enum VDM_TYPE {
 	VDM_CAM,
 	VDM_MIPI,
+	VDM_MIPI_PLAYBACK,
 	VDM_OTHER
 } VDM_TYPE;
 
@@ -99,12 +100,13 @@ static const unsigned consts_idx = 0x40; /* constants begin at 0x40 * 4 */
 static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs) {
 	static const unsigned dma_addr = consts_idx + 0;
 	static const unsigned dma_size = consts_idx + 1;
-	static const unsigned dma_size_max = consts_idx + 2;
+	static const unsigned buf_siz = consts_idx + 2;
 	static const unsigned irq_val = consts_idx + 3;
 	static const unsigned zero_val = consts_idx + 4;
 	static const unsigned cal_addr = consts_idx + 5;
 	static const unsigned cal_size = consts_idx + 6;
 	static const unsigned cal_start_addr = consts_idx + 7;
+	static const unsigned cnt = consts_idx + 8;
 	//static const unsigned dma_buff_addr = consts_idx + 3;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	static const unsigned line_size = 3840;
@@ -113,10 +115,12 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	//static const unsigned last_frame_addr = frame_size * n_frames;
 	static const unsigned ram = PROGRAM_OFFSET;
 	unsigned prog = ram;
-	unsigned entry, label0;
+	unsigned label0, label1;
         bool mipi_prog = vdev->vdm_type == VDM_MIPI;
+        bool mipi_playback_prog = vdev->vdm_type == VDM_MIPI_PLAYBACK;
 	unsigned tx_size = frame_size; // full UHD frame
 	unsigned cal_tx_size = frame_size*20/8; // full UHD frame 20 bits per pixel
+	static const unsigned cal_base_addr = 512*1024*1024;
 	int i;
 
 	/* Load data */
@@ -126,21 +130,20 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	dload(tx_size, dma_size);
 	dload(1, irq_val);
 	dload(0, zero_val);
+	dload(64, buf_siz);
 	/* Load instructions */
 	#define nexti(inst) \
 		iowrite32(inst, \
 				vdev->regs + prog); \
        		prog += 4
 	#define lbl() ((prog - ram)/4)
-	static const unsigned cal_base_addr = 512*1024*1024;
 	if (mipi_prog) {
 		//dload(3, irq_val); // disable calibration
 		//dload(2, zero_val); // siable cal
 		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
 		dload(cal_tx_size/4, cal_size);
 		label0 = lbl();
-		//nexti(zero(dma_addr));
-		// 4 frames in RAM buffer
+		nexti(zero(dma_addr));
 		for (i = 0; i < 4; i++) {
 			// send frame
 			nexti(in0(dma_addr)); 
@@ -162,7 +165,36 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 			nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
 		nexti(out0(zero_val)); // turn off IRQ line
 		nexti(br_imm(label0));
-        	dev_info(vdev->dev, "load mipi program\n");
+        	dev_info(vdev->dev, "load live mipi program\n");
+		return;
+	} else if (mipi_playback_prog) {
+		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
+		dload(cal_tx_size/4, cal_size);
+		label0 = lbl();
+		nexti(zero(dma_addr));
+		nexti(zero(cnt));
+		{ // repeat buf_siz times
+			label1 = lbl();
+			nexti(dma(0, dma_addr, dma_size));
+			// send calibration (in 4 chunks)
+			nexti(assign_mem(cal_addr, cal_start_addr));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(cal_addr, cal_size));
+			nexti(dma(1, cal_addr, cal_size));
+			nexti(add_mem(dma_addr, dma_size));
+			nexti(add_imm(cnt, 1));
+			nexti(brl(cnt, buf_siz, label1));
+		}
+
+		for (i = 0; i < 3; i++)
+			nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
+		nexti(out0(zero_val)); // turn off IRQ line
+		nexti(br_imm(label0));
+        	dev_info(vdev->dev, "load mipi playback program\n");
 		return;
 	} else if (op == 1) {
 		dload(cal_base_addr + cal_offs, cal_addr);
@@ -184,14 +216,17 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	} else {
 		label0 = lbl();
 		nexti(zero(dma_addr));
-		// 20 frames in RAM buffer
-		// TODO: will need to wait for a frame to finish processing
-		//  (maybe) using the tags, which are returned on the status interface
-		for (i = 0; i < 20; i++) {
+		nexti(zero(cnt));
+
+		{ // repeat buf_siz times
+			label1 = lbl();
 			nexti(dma(0, dma_addr, dma_size));
 			nexti(out1(dma_addr));
 			nexti(add_mem(dma_addr, dma_size));
+			nexti(add_imm(cnt, 1));
+			nexti(brl(cnt, buf_siz, label1));
 		}
+
 		for (i = 0; i < 3; i++)
 			nexti(out0(irq_val)); // send an IRQ
 		nexti(out0(zero_val)); // turn off IRQ line
@@ -342,9 +377,12 @@ static int idt_debugfs_create(struct platform_device *pdev)
 	if (0 == strncasecmp(vdev->node, "cam", 3)) {
 		vdev->vdm_type = VDM_CAM;
 		dev_info(vdev->dev, "detected cam VDM node %s\n", vdev->node);
-	} else if (0 == strncasecmp(vdev->node, "mipi", 4)) {
+	} else if (0 == strncasecmp(vdev->node, "mipi0", 5)) {
 		vdev->vdm_type = VDM_MIPI;
-		dev_info(vdev->dev, "detected mipi VDM node %s\n", vdev->node);
+		dev_info(vdev->dev, "detected live mipi VDM node %s\n", vdev->node);
+	} else if (0 == strncasecmp(vdev->node, "mipi1", 5)) {
+		vdev->vdm_type = VDM_MIPI_PLAYBACK;
+		dev_info(vdev->dev, "detected playback mipi VDM node %s\n", vdev->node);
 	}
 	dev_info(vdev->dev, "vdev=%p\n", vdev);
 
