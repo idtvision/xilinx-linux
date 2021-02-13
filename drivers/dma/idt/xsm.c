@@ -691,7 +691,7 @@ xsm_irq_thread(int irq, void *dev_id)
     //vdev->line_irq = 1;
     //wake_up_interruptible(&vdev->waitq);
 	link_up = xsm_link_up();
-    	printk("xsm irq; link=%d\n", link_up);
+    	//printk("xsm irq; link=%d\n", link_up);
 	// TODO: handle both cams
 	if (link_up)
 		netif_carrier_on(xsm_devs[0]);
@@ -700,8 +700,8 @@ xsm_irq_thread(int irq, void *dev_id)
 	lsb = ioread32(regs + 0x28);
 	lsb1 = ioread32(regs + 0x2c);
 	msb = ioread32(regs + 0x30);
-	if (lsb == 0x13 && msb == 0x11111111) printk("beacon\n");
-	else printk("data=0x%x at 0x%x\n", (lsb1<<16) | (lsb >> 16), lsb&0xffff);
+	//if (lsb == 0x13 && msb == 0x11111111) printk("beacon\n");
+	//else printk("data=0x%x at 0x%x\n", (lsb1<<16) | (lsb >> 16), lsb&0xffff);
 	reg9 = ioread32(regs + 0x24);
 	iowrite32(reg9|1, regs + 0x24); // clear received packet regs
     return ret;

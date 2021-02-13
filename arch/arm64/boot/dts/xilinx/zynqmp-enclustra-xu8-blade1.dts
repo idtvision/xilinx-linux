@@ -29,11 +29,13 @@
 		gpio0 = &gpio;
 		i2c0 = &i2c0;
 		mmc0 = &sdhci1;
+		mmc1 = &sdhci0;
 		rtc0 = &rtc;
 		serial0 = &uart0;
 		serial1 = &uart1;
 		serial2 = &dcc;
-		usb0 = &usb0;
+		spi0 = &qspi;
+		//usb0 = &usb0;
 	};
 
 	chosen {
@@ -108,7 +110,7 @@
 	};
 	/* MIPI2 DMA */
 	vdm2: vdm@80040000 {
-		status = "okay";
+		status = "disable";
 		compatible = "idt,vdm-1.00";
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -229,7 +231,7 @@
 };
 
 &gpu {
-	status = "okay";
+	status = "disable";
 };
 
 &i2c0 {
@@ -252,7 +254,7 @@
 };
 
 &rtc {
-	status = "okay";
+	status = "disable";
 };
 
 &sata {
@@ -282,7 +284,7 @@
 };
 
 &sdhci0 {
-	status = "disable";
+	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_sdhci0_default>;
 	non-removable;
@@ -292,7 +294,7 @@
 };
 
 &serdes {
-	status = "okay";
+	status = "disable";
 };
 
 &uart0 {
@@ -309,13 +311,13 @@
 
 /* ULPI SMSC USB3320 */
 &usb0 {
-	status = "okay";
+	status = "disable";
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_usb0_default>;
 };
 
 &dwc3_0 {
-	status = "okay";
+	status = "disable";
 	dr_mode = "host";
 	snps,usb3_lpm_capable;
 	maximum-speed = "super-speed";

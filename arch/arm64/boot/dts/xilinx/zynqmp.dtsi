@@ -39,6 +39,7 @@
 			cpu-idle-states = <&CPU_SLEEP_0>;
 		};
 
+/*
 		cpu2: cpu@2 {
 			compatible = "arm,cortex-a53", "arm,armv8";
 			device_type = "cpu";
@@ -56,6 +57,7 @@
 			operating-points-v2 = <&cpu_opp_table>;
 			cpu-idle-states = <&CPU_SLEEP_0>;
 		};
+*/
 
 		idle-states {
 			entry-method = "arm,psci";
@@ -884,7 +886,7 @@
 		qspi: spi@ff0f0000 {
 			u-boot,dm-pre-reloc;
 			compatible = "xlnx,zynqmp-qspi-1.0";
-			status = "disabled";
+			status = "okay";
 			clock-names = "ref_clk", "pclk";
 			interrupts = <0 15 4>;
 			interrupt-parent = <&gic>;
@@ -985,7 +987,7 @@
 
 		spi0: spi@ff040000 {
 			compatible = "cdns,spi-r1p6";
-			status = "disabled";
+			status = "okay";
 			interrupt-parent = <&gic>;
 			interrupts = <0 19 4>;
 			reg = <0x0 0xff040000 0x0 0x1000>;
@@ -997,7 +999,7 @@
 
 		spi1: spi@ff050000 {
 			compatible = "cdns,spi-r1p6";
-			status = "disabled";
+			status = "koay";
 			interrupt-parent = <&gic>;
 			interrupts = <0 20 4>;
 			reg = <0x0 0xff050000 0x0 0x1000>;
