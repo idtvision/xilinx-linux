@@ -121,7 +121,8 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
         bool mipi_playback_prog = vdev->vdm_type == VDM_MIPI_PLAYBACK;
 	unsigned tx_size = frame_size; // full UHD frame
 	unsigned cal_tx_size = frame_size*20/8; // full UHD frame 20 bits per pixel
-	static const unsigned cal_base_addr = dma_buff_addr_base + 512*1024*1024;
+	static const unsigned pl_ddr_base_addr = 0x80000000;
+	static const unsigned cal_base_addr = pl_ddr_base_addr + 512*1024*1024;
 	int i;
 
 	/* Load data */
@@ -131,7 +132,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	dload(tx_size, dma_size);
 	dload(1, irq_val);
 	dload(0, zero_val);
-	dload(64, buf_siz);
+	dload(194, buf_siz);
 	dload(dma_buff_addr_base, dma_buff_addr); 
 	/* Load instructions */
 	#define nexti(inst) \
