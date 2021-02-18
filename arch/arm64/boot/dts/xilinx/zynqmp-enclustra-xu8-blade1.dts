@@ -110,7 +110,7 @@
 	};
 	/* MIPI2 DMA */
 	vdm2: vdm@80040000 {
-		status = "disable";
+		status = "okay";
 		compatible = "idt,vdm-1.00";
 		#address-cells = <2>;
 		#size-cells = <2>;
