@@ -24,7 +24,7 @@
 	compatible = "xlnx,zynqmp";
 
 	aliases {
-		ethernet0 = &gem0;
+		//ethernet0 = &gem0;
 		ethernet1 = &gem3;
 		gpio0 = &gpio;
 		i2c0 = &i2c0;
@@ -33,7 +33,7 @@
 		rtc0 = &rtc;
 		serial0 = &uart0;
 		serial1 = &uart1;
-		serial2 = &dcc;
+		//serial2 = &dcc;
 		spi0 = &qspi;
 		//usb0 = &usb0;
 	};
@@ -163,7 +163,7 @@
 };
 
 &dcc {
-	status = "okay";
+	status = "disable";
 };
 
 /* fpd_dma clk 667MHz, lpd_dma 500MHz */
@@ -208,14 +208,16 @@
 	xlnx,include-sg; /* for testing purpose */
 };
 
+/*
 &gem0 {
-	status = "okay";
+	status = "disable";
 	local-mac-address = [00 0a 35 00 02 90];
 	phy-mode = "rgmii-id";
 	phy-handle = <&phy3>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_gem0_default>;
 };
+*/
 
 &gem3 {
 	status = "okay";
@@ -304,17 +306,19 @@
 };
 
 &uart1 {
-	status = "disable";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_uart1_default>;
+	status = "okay";
+	//pinctrl-names = "default";
+	//pinctrl-0 = <&pinctrl_uart1_default>;
 };
 
 /* ULPI SMSC USB3320 */
+/*
 &usb0 {
 	status = "disable";
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_usb0_default>;
 };
+*/
 
 &dwc3_0 {
 	status = "disable";
@@ -362,7 +366,7 @@
 		conf {
 			groups = "uart0_9_grp";
 			slew-rate = <SLEW_RATE_SLOW>;
-			io-standard = <IO_STANDARD_LVCMOS18>;
+			io-standard = <IO_STANDARD_LVCMOS33>;
 		};
 
 		conf-rx {
@@ -376,29 +380,32 @@
 		};
 	};
 
+/*
 	pinctrl_uart1_default: uart1-default {
 		mux {
-			groups = "uart1_6_grp";
+			groups = "uart1_8_grp";
 			function = "uart1";
 		};
 
 		conf {
-			groups = "uart1_6_grp";
+			groups = "uart1_8_grp";
 			slew-rate = <SLEW_RATE_SLOW>;
-			io-standard = <IO_STANDARD_LVCMOS18>;
+			io-standard = <IO_STANDARD_LVCMOS33>;
 		};
 
 		conf-rx {
-			pins = "MIO25";
+			pins = "MIO41";
 			bias-high-impedance;
 		};
 
 		conf-tx {
-			pins = "MIO24";
+			pins = "MIO40";
 			bias-disable;
 		};
 	};
+*/
 
+/*
 	pinctrl_usb0_default: usb0-default {
 		mux {
 			groups = "usb0_0_grp";
@@ -422,6 +429,7 @@
 			bias-disable;
 		};
 	};
+*/
 
 	pinctrl_gem3_default: gem3-default {
 		mux {
@@ -450,6 +458,7 @@
 		};
 	};
 
+/*
 	pinctrl_gem0_default: gem0-default {
 		mux {
 			function = "ethernet0";
@@ -476,6 +485,7 @@
 			low-power-enable;
 		};
 	};
+*/
 
 	pinctrl_sdhci0_default: sdhci0-default {
 		mux {
