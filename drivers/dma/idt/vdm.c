@@ -110,7 +110,6 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	static const unsigned dma_buff_addr = consts_idx + 9;
 	static const unsigned dma_buff_addr_base = 512*1024*1024;
 	static const unsigned playback_buf_siz = consts_idx + 10;
-	static const unsigned playback_buf_addr = consts_idx + 11;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	static const unsigned line_size = 3840;
 	static const unsigned frame_size = 2160 * line_size;
@@ -231,12 +230,12 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 			nexti(out1(dma_addr));
 			nexti(add_mem(dma_addr, dma_size));
 			nexti(add_imm(cnt, 1));
+			for (i = 0; i < 3; i++)
+				nexti(out0(irq_val)); // send an IRQ
+			nexti(out0(zero_val)); // turn off IRQ line
 			nexti(brl(cnt, buf_siz, label1));
 		}
 
-		for (i = 0; i < 3; i++)
-			nexti(out0(irq_val)); // send an IRQ
-		nexti(out0(zero_val)); // turn off IRQ line
 		nexti(br_imm(label0));
         	dev_info(vdev->dev, "load cam program\n");
 		return;
@@ -418,15 +417,15 @@ vdm_read(struct file *file,
                  size_t length,
                  loff_t *f_offset)
 {
-	if (length < 4)
-		return -EINVAL;
 	struct vdm_device *vdev = file->private_data;
+	unsigned int word;
 	if (!vdev)
 		return -EINVAL;
-	unsigned int word = ioread32(vdev->regs + PROGRAM_OFFSET + consts_idx*4);
-        if (copy_to_user(buffer, &word, 4))
+	if (length < sizeof(word))
+		return -EINVAL;
+	word = ioread32(vdev->regs + PROGRAM_OFFSET + consts_idx*4);
+        if (copy_to_user(buffer, &word, sizeof(word)))
                 return -EFAULT;
-err_out:
         return 4;;
 }
 
