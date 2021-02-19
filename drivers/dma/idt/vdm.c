@@ -109,6 +109,8 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	static const unsigned cnt = consts_idx + 8;
 	static const unsigned dma_buff_addr = consts_idx + 9;
 	static const unsigned dma_buff_addr_base = 512*1024*1024;
+	static const unsigned playback_buf_siz = consts_idx + 10;
+	static const unsigned playback_buf_addr = consts_idx + 11;
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	static const unsigned line_size = 3840;
 	static const unsigned frame_size = 2160 * line_size;
@@ -133,6 +135,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	dload(1, irq_val);
 	dload(0, zero_val);
 	dload(194, buf_siz);
+	dload(64, playback_buf_siz);
 	dload(dma_buff_addr_base, dma_buff_addr); 
 	/* Load instructions */
 	#define nexti(inst) \
@@ -173,8 +176,9 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	} else if (mipi_playback_prog) {
 		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
 		dload(cal_tx_size/4, cal_size);
+		dload(pl_ddr_base_addr, dma_buff_addr);
 		label0 = lbl();
-		nexti(zero(dma_addr));
+		nexti(assign_mem(dma_addr, dma_buff_addr));
 		nexti(zero(cnt));
 		{ // repeat buf_siz times
 			label1 = lbl();
@@ -190,12 +194,11 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(dma_addr, dma_size));
 			nexti(add_imm(cnt, 1));
-			nexti(brl(cnt, buf_siz, label1));
+			for (i = 0; i < 3; i++)
+				nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
+			nexti(out0(zero_val)); // turn off IRQ line
+			nexti(brl(cnt, playback_buf_siz, label1));
 		}
-
-		for (i = 0; i < 3; i++)
-			nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
-		nexti(out0(zero_val)); // turn off IRQ line
 		nexti(br_imm(label0));
         	dev_info(vdev->dev, "load mipi playback program\n");
 		return;
@@ -408,6 +411,25 @@ error:
         return -ENOMEM;
 }
 
+// return current frame number (from constant 0 in the VDM program)
+static ssize_t
+vdm_read(struct file *file,
+                 char __user *buffer,
+                 size_t length,
+                 loff_t *f_offset)
+{
+	if (length < 4)
+		return -EINVAL;
+	struct vdm_device *vdev = file->private_data;
+	if (!vdev)
+		return -EINVAL;
+	unsigned int word = ioread32(vdev->regs + PROGRAM_OFFSET + consts_idx*4);
+        if (copy_to_user(buffer, &word, 4))
+                return -EFAULT;
+err_out:
+        return 4;;
+}
+
 
 static unsigned int
 vdm_poll(struct file *file, poll_table *wait)
@@ -520,6 +542,7 @@ static const struct file_operations vdm_fops = {
     .release = vdm_dev_release,
     .unlocked_ioctl = vdm_dev_ioctl,
     .poll = vdm_poll,
+    .read = vdm_read,
 };
 
 static irqreturn_t
