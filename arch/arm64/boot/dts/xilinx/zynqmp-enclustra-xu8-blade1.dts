@@ -20,6 +20,8 @@
 #include <dt-bindings/phy/phy.h>
 
 / {
+    #address-cells = <2>;
+    #size-cells = <2>;
 	model = "Enclustra XU8 SOM";
 	compatible = "xlnx,zynqmp";
 
@@ -43,26 +45,68 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+#if 0
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x0 0x0 0x20000000>;
+		//reg = <0x0 0x00000000 0x0 0x80000000>, <0x0 0xa8000000 0x0 0x08000000>;
+		reg = <0x0 0xa8000000 0x0 0x08000000>;
 	};
+#endif
+    memory@0 {
+        device_type = "memory";
+        reg = <0x0 0x0 0x0 0x80000000>, <0x0 0xa8000000 0x0 0x08000000>;
+    };
+
+#if 0
+	memory {
+    		#address-cells = <2>;
+    		#size-cells = <2>;
+		reg =  <0x0 0x00000000 0x0 0x20000000
+			0x0 0x20000000 0x0 0x60000000
+			0x0 0xa8000000 0x0 0x08000000>;
+#if 0
+		contig_mem: region@20000000 {
+			linux,contiguous-region;
+			linux,default-contiguous-region;
+			reg = < 0x0 0x20000000 0x0 0x60000000>;
+		};
+		playback_dma_buf: region@a8000000 {
+			linux,contiguous-region;
+			reg = <0x0 0xa8000000 0x0  0x08000000>;
+		};
+#endif
+	};
+#endif
 
 	reserved-memory {
     		#address-cells = <2>;
     		#size-cells = <2>;
     		ranges;
- 
     		cam_dma_buf: buffer@20000000 {
         		compatible = "shared-dma-pool";
         		//no-map;
+			//reusable;
         		reg = <0x0 0x20000000 0x0 0x60000000>;
     		};
+    		playback_dma_buf: buffer@a8000000 {
+        		compatible = "shared-dma-pool";
+        		//no-map;
+			///reusable;
+        		reg = <0x0 0xa8000000 0x0 0x08000000>;
+			//alignment = <0x2000>;
+			//linux,cma-default;
+    		};
+/*
+//This hangs the system early...
     		playback_dma_buf: buffer@480000000 {
         		compatible = "shared-dma-pool";
         		//no-map;
-        		reg = <0x4 0x80000000 0x0 0x20000000>;
+			reusable;
+        		reg = <0x4 0x80000000 0x0 0x400000>;
+			//alignment = <0x2000>;
+			//linux,cma-default;
     		};
+*/
 	};
 
 	mdio {
@@ -124,6 +168,7 @@
 		interrupt-parent = <&gic>;
 		/* rising edge */
 		interrupts = <0 93 1>;
+		memory-region = <&cam_dma_buf>;
 	};
 	/* MIPI2 DMA */
 	vdm2: vdm@80040000 {
@@ -136,6 +181,7 @@
 		interrupt-parent = <&gic>;
 		/* rising edge */
 		interrupts = <0 95 1>;
+		memory-region = <&playback_dma_buf>;
 	};
 	/* XStreamMini Camera */
 	xsm0: xsm@8102000 {
