@@ -4,6 +4,7 @@
  * Microcoded data mover DMA
  *
  */
+#include <linux/version.h>
 #include <linux/cdev.h>
 #include <linux/bitops.h>
 #include <linux/dmapool.h>
@@ -16,11 +17,14 @@
 #include <linux/of_dma.h>
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/poll.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/debugfs.h>
+#include <linux/dma-mapping.h>
+#include <asm/page.h>
 
 #include "vdm_controller_regs.h"
 #include "vdm_controller_ops.h"
@@ -32,6 +36,14 @@
 #define DRIVER_VERSION  "1.0"
 #define DRIVER_MAX_DEV  BIT(MINORBITS)
 
+#define VDM_DEBUG 1
+
+#if     (VDM_DEBUG == 1)
+//#define VDM_DEBUG_CHECK(this,debug) (this->debug)
+#define VDM_DEBUG_CHECK(this,debug) (1)
+#else
+#define VDM_DEBUG_CHECK(this,debug) (0)
+#endif
 
 static struct class *vdm_class;
 static atomic_t vdm_ndevs = ATOMIC_INIT(0);
@@ -57,6 +69,10 @@ typedef enum VDM_TYPE {
  * @waitq: IRQ wait queue
  * @line_irq: line irq happened
  * @node: name of this instance from the DT
+ * @vdm_type: type of this VDM instance (enum)
+ * @virt_addr: kernel virtual address of the dma buffer
+ * @phys_addr: physical address of the dma buffer
+ * @dma_buf_size: suze if the dma buffer in bytes
  */
 struct vdm_device {
 	void __iomem *regs;
@@ -72,6 +88,9 @@ struct vdm_device {
 	unsigned irq_cnt;
 	char node[32];
 	VDM_TYPE vdm_type;
+	void *virt_addr;
+       	dma_addr_t phys_addr;
+       	size_t dma_buf_size;
 };
 
 
@@ -80,6 +99,25 @@ static const struct of_device_id vdm_of_ids[] = {
 	{}
 };
 MODULE_DEVICE_TABLE(of, vdm_of_ids);
+
+/**
+ * _PGPROT_NONCACHED    : vm_page_prot value when ((sync_mode & SYNC_MODE_MASK) == SYNC_MODE_NONCACHED   )
+ * _PGPROT_WRITECOMBINE : vm_page_prot value when ((sync_mode & SYNC_MODE_MASK) == SYNC_MODE_WRITECOMBINE)
+ * _PGPROT_DMACOHERENT  : vm_page_prot value when ((sync_mode & SYNC_MODE_MASK) == SYNC_MODE_DMACOHERENT )
+ */
+#if     defined(CONFIG_ARM)
+#define _PGPROT_NONCACHED(vm_page_prot)    pgprot_noncached(vm_page_prot)
+#define _PGPROT_WRITECOMBINE(vm_page_prot) pgprot_writecombine(vm_page_prot)
+#define _PGPROT_DMACOHERENT(vm_page_prot)  pgprot_dmacoherent(vm_page_prot)
+#elif   defined(CONFIG_ARM64)
+#define _PGPROT_NONCACHED(vm_page_prot)    pgprot_noncached(vm_page_prot)
+#define _PGPROT_WRITECOMBINE(vm_page_prot) pgprot_writecombine(vm_page_prot)
+#define _PGPROT_DMACOHERENT(vm_page_prot)  pgprot_writecombine(vm_page_prot)
+#else
+#define _PGPROT_NONCACHED(vm_page_prot)    pgprot_noncached(vm_page_prot)
+#define _PGPROT_WRITECOMBINE(vm_page_prot) pgprot_writecombine(vm_page_prot)
+#define _PGPROT_DMACOHERENT(vm_page_prot)  pgprot_writecombine(vm_page_prot)
+#endif
 
 static int vdm_debugfs_streaming_show(void *data, u64 *val)
 {
@@ -93,6 +131,8 @@ static int vdm_debugfs_streaming_show(void *data, u64 *val)
 }
 
 static const unsigned consts_idx = 0x40; /* constants begin at 0x40 * 4 */
+static const unsigned long long pl_ddr_base_addr_ps_view = 0x480000000;
+static const unsigned long long pl_ddr_base_addr_ps_view_mask = 0x4ffffffff;
 
 
 // @op: 0 (main), 1(calibration, not on MIPI node)
@@ -143,6 +183,13 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
        		prog += 4
 	#define lbl() ((prog - ram)/4)
 	if (mipi_prog) {
+		static const unsigned long long alloc_size = 3*512*1024*1024;
+		//void *vaddr = memremap(dma_buff_addr_base, alloc_size, MEMREMAP_WB);
+		//dev_info(vdev->dev, "Allocated reserved memory, vaddr: 0x%0llX, paddr: 0x%0llX\n",
+			//(u64)vaddr, dma_buff_addr_base);
+		vdev->phys_addr = dma_buff_addr_base;
+		vdev->virt_addr = 0; // vaddr;
+		vdev->dma_buf_size = alloc_size;
 		//dload(3, irq_val); // disable calibration
 		//dload(2, zero_val); // siable cal
 		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
@@ -173,6 +220,37 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
         	dev_info(vdev->dev, "load live mipi program\n");
 		return;
 	} else if (mipi_playback_prog) {
+		static const unsigned long long alloc_size = 512*1024*1024;
+		//void *vaddr = memremap(pl_ddr_base_addr_ps_view, alloc_size, MEMREMAP_WB);
+		//dev_info(vdev->dev, "Allocated reserved memory, vaddr: 0x%0llX, paddr: 0x%0llX\n",
+			//(u64)vaddr, pl_ddr_base_addr_ps_view);
+		vdev->phys_addr = pl_ddr_base_addr_ps_view;
+		vdev->virt_addr = 0; //vaddr;
+		vdev->dma_buf_size = alloc_size;
+#if 0
+
+		void *vaddr;
+		dma_addr_t paddr = 0;
+		u64 mask = pl_ddr_base_addr_ps_view_mask;
+		int status;
+		/* Initialize reserved memory resources */
+  		status = of_reserved_mem_device_init(vdev->dev);
+		if (status) {
+			dev_err(vdev->dev, "Could not get reserved memory\n");
+			//return;
+  		}
+		status = dma_set_coherent_mask(vdev->dev, mask);
+		dev_info(vdev->dev, "DMA set coherent mask 0x%0llX returned %d\n", mask, status);
+		vaddr = dma_alloc_coherent(vdev->dev, alloc_siz, &paddr, GFP_KERNEL);
+		dev_info(vdev->dev, "Allocated coherent memory, vaddr: 0x%0llX, paddr: 0x%0llX\n",
+			       		(u64)vaddr, paddr);
+		dev_info(vdev->dev, "Buf siz %lld\n", alloc_siz);
+		vdev->dma_buf_size = alloc_siz;
+		vdev->phys_addr = paddr;
+		vdev->virt_addr = vaddr;
+#endif
+		//vdev->phys_addr = pl_ddr_base_addr_ps_view; // where the buffer is, addressed by the CPU
+
 		dload(cal_base_addr + 0x38, cal_start_addr); // +0x38 to skip the header
 		dload(cal_tx_size/4, cal_size);
 		dload(pl_ddr_base_addr, dma_buff_addr);
@@ -410,6 +488,232 @@ error:
         return -ENOMEM;
 }
 
+//#if (USE_VMA_FAULT == 1)
+/**
+ * DOC: Device VM Area Operations
+ *
+ * This section defines the operation of vm when mmap-ed the udmabuf device file.
+ *
+ * * vdm_vma_open()  - udmabuf device vm area open operation.
+ * * vdm_vma_close() - udmabuf device vm area close operation.
+ * * vdm_vma_fault() - udmabuf device vm area fault operation.
+ * * vdm_vm_ops      - udmabuf device vm operation table.
+ */
+
+/**
+ * vdm_vma_open() - udmabuf device vm area open operation.
+ * @vma:        Pointer to the vm area structure.
+ * Return:      None
+ */
+static void vdm_vma_open(struct vm_area_struct* vma)
+{
+    struct vdm_device* this = vma->vm_private_data;
+    if (VDM_DEBUG_CHECK(this, debug_vma))
+        dev_info(this->dev, "vma_open(virt_addr=0x%lx, offset=0x%lx)\n", vma->vm_start, vma->vm_pgoff<<PAGE_SHIFT);
+}
+
+/**
+ * vdm_vma_close() - udmabuf device vm area close operation.
+ * @vma:        Pointer to the vm area structure.
+ * Return:      None
+ */
+static void vdm_vma_close(struct vm_area_struct* vma)
+{
+    struct vdm_device* this = vma->vm_private_data;
+    if (VDM_DEBUG_CHECK(this, debug_vma))
+        dev_info(this->dev, "vma_close()\n");
+}
+
+/**
+ * VM_FAULT_RETURN_TYPE - Type of vdm_vma_fault() return value.
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
+typedef vm_fault_t VM_FAULT_RETURN_TYPE;
+#else
+typedef int        VM_FAULT_RETURN_TYPE;
+#endif
+
+/**
+ * _vdm_vma_fault() - udmabuf device vm area fault operation.
+ * @vma:        Pointer to the vm area structure.
+ * @vfm:        Pointer to the vm fault structure.
+ * Return:      VM_FAULT_RETURN_TYPE (Success(=0) or error status(!=0)).
+ */
+static inline VM_FAULT_RETURN_TYPE _vdm_vma_fault(struct vm_area_struct* vma, struct vm_fault* vmf)
+{
+    struct vdm_device* this = vma->vm_private_data;
+    unsigned long offset             = vmf->pgoff << PAGE_SHIFT;
+    unsigned long phys_addr          = this->phys_addr + offset;
+    unsigned long page_frame_num     = phys_addr  >> PAGE_SHIFT;
+    unsigned long request_size       = 1          << PAGE_SHIFT;
+    unsigned long available_size     = this->dma_buf_size -offset;
+    unsigned long virt_addr;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+    virt_addr = vmf->address;
+#else
+    virt_addr = (unsigned long)vmf->virtual_address;
+#endif
+
+#if 0
+    if (VDM_DEBUG_CHECK(this, debug_vma))
+        dev_info(this->dev,
+                 "vma_fault(virt_addr=%pad, phys_addr=%pad)\n", &virt_addr, &phys_addr
+        );
+#endif
+
+    if (request_size > available_size)
+        return VM_FAULT_SIGBUS;
+
+    if (!pfn_valid(page_frame_num)) 
+        return VM_FAULT_SIGBUS;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0))
+    return vmf_insert_pfn(vma, virt_addr, page_frame_num);
+#else
+    {
+        int err = vm_insert_pfn(vma, virt_addr, page_frame_num);
+        if (err == -ENOMEM)
+            return VM_FAULT_OOM;
+        if (err < 0 && err != -EBUSY)
+            return VM_FAULT_SIGBUS;
+
+        return VM_FAULT_NOPAGE;
+    }
+#endif
+}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+/**
+ * vdm_vma_fault() - udmabuf device vm area fault operation.
+ * @vfm:        Pointer to the vm fault structure.
+ * Return:      VM_FAULT_RETURN_TYPE (Success(=0) or error status(!=0)).
+ */
+static VM_FAULT_RETURN_TYPE vdm_vma_fault(struct vm_fault* vmf)
+{
+    return _vdm_vma_fault(vmf->vma, vmf);
+}
+#else
+/**
+ * vdm_vma_fault() - udmabuf device vm area fault operation.
+ * @vma:        Pointer to the vm area structure.
+ * @vfm:        Pointer to the vm fault structure.
+ * Return:      VM_FAULT_RETURN_TYPE (Success(=0) or error status(!=0)).
+ */
+static VM_FAULT_RETURN_TYPE vdm_vma_fault(struct vm_area_struct* vma, struct vm_fault* vmf)
+{
+    return _vdm_vma_fault(vma, vmf);
+}
+#endif
+
+/**
+ * udmabuf device vm operation table.
+ */
+static const struct vm_operations_struct vdm_vm_ops = {
+    .open    = vdm_vma_open ,
+    .close   = vdm_vma_close,
+    .fault   = vdm_vma_fault,
+};
+
+//#endif /* #if (USE_VMA_FAULT == 1) */
+
+
+// arm64 mmap code
+// ./arch/arm64/mm/dma-mapping.c
+//
+/**
+ * vdm_mmap() - dmabuf memory map operation.
+ * @file:       Pointer to the file structure.
+ * @vma:        Pointer to the vm area structure.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int vdm_mmap(struct file *file, struct vm_area_struct* vma)
+{
+	struct vdm_device *vdev = file->private_data;
+        bool mipi_playback_prog = vdev->vdm_type == VDM_MIPI_PLAYBACK;
+        bool mipi_prog = vdev->vdm_type == VDM_MIPI;
+	if (!mipi_playback_prog && !mipi_prog) {
+		dev_err(vdev->dev, "mmap is not implemented for others than mipi VDM");
+		return -EINVAL;
+	}
+        dev_info(vdev->dev, "vdm_mmap");
+	// TODO: boundary checking
+    	//if (vma->vm_pgoff + vma_pages(vma) > (this->alloc_size >> PAGE_SHIFT))
+        	//return -EINVAL;
+
+	/**
+ * sync_mode(synchronous mode) value
+ */
+#define SYNC_MODE_INVALID       (0x00)
+#define SYNC_MODE_NONCACHED     (0x01)
+#define SYNC_MODE_WRITECOMBINE  (0x02)
+#define SYNC_MODE_DMACOHERENT   (0x03)
+#define SYNC_MODE_MASK          (0x03)
+#define SYNC_MODE_MIN           (0x01)
+#define SYNC_MODE_MAX           (0x03)
+#define SYNC_ALWAYS             (0x04)
+
+
+	int sync_mode = SYNC_MODE_NONCACHED | SYNC_ALWAYS;
+    	if ((file->f_flags & O_SYNC) | (sync_mode & SYNC_ALWAYS)) {
+          switch (sync_mode & SYNC_MODE_MASK) {
+            case SYNC_MODE_NONCACHED : 
+                //vma->vm_flags    |= VM_IO;
+                vma->vm_page_prot = _PGPROT_NONCACHED(vma->vm_page_prot);
+                break;
+            case SYNC_MODE_WRITECOMBINE :
+                vma->vm_flags    |= VM_IO;
+                vma->vm_page_prot = _PGPROT_WRITECOMBINE(vma->vm_page_prot);
+                break;
+            case SYNC_MODE_DMACOHERENT :
+                //vma->vm_flags    |= VM_IO;
+                vma->vm_page_prot = _PGPROT_DMACOHERENT(vma->vm_page_prot);
+                break;
+            default : 
+                break;
+        }
+    }
+    vma->vm_private_data = vdev;
+
+    // Trying to remove VM_IO ???
+    dev_info(vdev->dev, "vma->vm_flags = 0x%x", vma->vm_flags);
+    vma->vm_flags &= ~VM_IO;
+    dev_info(vdev->dev, "vma->vm_flags = 0x%x", vma->vm_flags);
+
+    // TODO: this is a faulting-in implementation
+//#if (USE_VMA_FAULT == 1)
+if (0)
+    {
+        unsigned long page_frame_num = (vdev->phys_addr >> PAGE_SHIFT) + vma->vm_pgoff;
+    	dev_info(vdev->dev, "pfn=%lx", page_frame_num);
+        if (pfn_valid(page_frame_num)) {
+            vma->vm_flags |= VM_PFNMAP;
+    	    dev_info(vdev->dev, "vm_flags=%x", vma->vm_flags);
+            vma->vm_ops    = &vdm_vm_ops;
+            vdm_vma_open(vma);
+            return 0;
+        } else {
+    		dev_info(vdev->dev, "invalid pfn");
+
+	}
+	return -EINVAL;
+    }
+//#endif
+//
+#if 1
+    	dev_info(vdev->dev, "vaddr=%p paddr=%llx size=%lx", vdev->virt_addr, vdev->phys_addr, vdev->dma_buf_size);
+//	dma_mmap_attrs(struct device *dev, struct vm_area_struct *vma, void *cpu_addr,
+               //dma_addr_t dma_addr, size_t size, unsigned long attrs)
+
+	//int res = dma_mmap_attrs(vdev->dev, vma, vdev->virt_addr, vdev->phys_addr, vdev->dma_buf_size, 0);
+	int res = dma_mmap_coherent(vdev->dev, vma, vdev->virt_addr, vdev->phys_addr, vdev->dma_buf_size);
+    	dev_info(vdev->dev, "ret=%d", res);
+
+	return res;
+#endif
+}
+
+
 // return current frame number (from constant 0 in the VDM program)
 static ssize_t
 vdm_read(struct file *file,
@@ -542,6 +846,7 @@ static const struct file_operations vdm_fops = {
     .unlocked_ioctl = vdm_dev_ioctl,
     .poll = vdm_poll,
     .read = vdm_read,
+    .mmap = vdm_mmap,
 };
 
 static irqreturn_t
@@ -611,6 +916,12 @@ static int vdm_probe(struct platform_device *pdev)
 		dev_dbg(&pdev->dev, "platform_get_irq failed");
 		irq_enabled = false;
 	}
+
+	err = of_dma_configure(&pdev->dev, pdev->dev.of_node);
+        if (err != 0) {
+            dev_err(&pdev->dev, "of_dma_configure failed. return=%d\n", err);
+            return -EFAULT;
+        }
 
 	platform_set_drvdata(pdev, vdev);
 

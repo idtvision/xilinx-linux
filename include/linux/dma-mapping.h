@@ -468,6 +468,7 @@ dma_mmap_attrs(struct device *dev, struct vm_area_struct *vma, void *cpu_addr,
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 	BUG_ON(!ops);
+	printk("dma_mmap_attrs ops->mmap = %p", ops->mmap);
 	if (ops->mmap)
 		return ops->mmap(dev, vma, cpu_addr, dma_addr, size, attrs);
 	return dma_common_mmap(dev, vma, cpu_addr, dma_addr, size);

@@ -713,6 +713,7 @@ static void nvme_unmap_data(struct nvme_dev *dev, struct request *req)
 	nvme_free_iod(dev, req);
 }
 
+//So this is the NVME request queueing:
 /*
  * NOTE: ns is NULL when called on the admin queue.
  */

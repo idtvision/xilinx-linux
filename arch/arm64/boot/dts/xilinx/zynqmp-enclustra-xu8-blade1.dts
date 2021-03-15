@@ -52,10 +52,13 @@
 		reg = <0x0 0xa8000000 0x0 0x08000000>;
 	};
 #endif
-    memory@0 {
-        device_type = "memory";
-        reg = <0x0 0x0 0x0 0x80000000>, <0x0 0xa8000000 0x0 0x08000000>;
-    };
+
+	// NOTE: memory is set in the DTS by u-boot, not here
+	// This one is ignored
+    	memory@0 {
+        	device_type = "memory";
+        	reg = <0x0 0x0 0x0 0x80000000>, <0x0 0xa8000000 0x0 0x08000000>;
+	};
 
 #if 0
 	memory {
@@ -88,11 +91,11 @@
 			//reusable;
         		reg = <0x0 0x20000000 0x0 0x60000000>;
     		};
-    		playback_dma_buf: buffer@a8000000 {
+    		playback_dma_buf: buffer@480000000 {
         		compatible = "shared-dma-pool";
         		//no-map;
 			///reusable;
-        		reg = <0x0 0xa8000000 0x0 0x08000000>;
+        		reg = <0x4 0x80000000 0x0 0x20000000>;
 			//alignment = <0x2000>;
 			//linux,cma-default;
     		};
