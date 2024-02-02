@@ -175,7 +175,7 @@
 	};
 	/* MIPI2 DMA */
 	vdm2: vdm@80040000 {
-		status = "okay";
+		status = "disable";
 		compatible = "idt,vdm-1.00";
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -198,7 +198,7 @@
 		interrupts = <0 94 1>;
 	};
 	xdma_0: axi-pcie@500000000 {
-        status = "okay";
+        status = "disable";
         #address-cells = <3>;
         #interrupt-cells = <1>;
         #size-cells = <2>;
@@ -304,7 +304,7 @@
 
 &i2c0 {
 	status = "okay";
-	clock-frequency = <400000>;
+	clock-frequency = <40000>;
 	pinctrl-names = "default", "gpio";
 	pinctrl-0 = <&pinctrl_i2c0_default>;
 	pinctrl-1 = <&pinctrl_i2c0_gpio>;
