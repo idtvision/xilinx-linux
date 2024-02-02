@@ -149,7 +149,20 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	static const unsigned cnt = consts_idx + 8;
 	static const unsigned dma_buff_addr = consts_idx + 9;
 	static const unsigned dma_buff_addr_base = 512*1024*1024;
-	static const unsigned playback_buf_siz = consts_idx + 10;
+	//static const unsigned playback_buf_siz = consts_idx + 10;
+	static const unsigned cnt1 = consts_idx + 10;
+	static const unsigned num_halves = consts_idx + 11;
+	//static const unsigned quarter_dma_size = consts_idx + 13;
+	static const unsigned hd_line_size = consts_idx + 12;
+	static const unsigned dma_line_addr = consts_idx + 13;
+	static const unsigned cnt2 = consts_idx + 14;
+
+//#error
+// TODO: try using previous DMA address to send to the output DMA, not the current one!
+
+	static const unsigned num_hd_lines = consts_idx + 15;
+	static const unsigned prev_dma_addr = consts_idx + 16;
+
 	//static const unsigned buf_size = 1*1024*1024*1024U;
 	static const unsigned line_size = 3840;
 	static const unsigned frame_size = 2160 * line_size;
@@ -157,9 +170,10 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	//static const unsigned last_frame_addr = frame_size * n_frames;
 	static const unsigned ram = PROGRAM_OFFSET;
 	unsigned prog = ram;
-	unsigned label0, label1;
-        bool mipi_prog = vdev->vdm_type == VDM_MIPI;
-        bool mipi_playback_prog = vdev->vdm_type == VDM_MIPI_PLAYBACK;
+	unsigned label0, label1, label2, label3;
+	unsigned label4, label5;
+ 	bool mipi_prog = vdev->vdm_type == VDM_MIPI;
+	bool mipi_playback_prog = vdev->vdm_type == VDM_MIPI_PLAYBACK;
 	unsigned tx_size = frame_size; // full UHD frame
 	unsigned cal_tx_size = frame_size*20/8; // full UHD frame 20 bits per pixel
 	static const unsigned pl_ddr_base_addr = 0x80000000;
@@ -170,12 +184,17 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 	#define dload(d, idx) \
 		iowrite32(d, vdev->regs + ram + 4*idx);
 	dload(0, dma_addr);
+	dload(0, prev_dma_addr);
 	dload(tx_size, dma_size);
 	dload(1, irq_val);
 	dload(0, zero_val);
-	dload(194, buf_siz);
-	dload(64, playback_buf_siz);
+	dload(8, buf_siz);
+	//dload(64, playback_buf_siz);
 	dload(dma_buff_addr_base, dma_buff_addr); 
+	dload(2, num_halves);
+	//dload(tx_size/4, quarter_dma_size);
+	dload(1920, hd_line_size);
+	dload(1080, num_hd_lines);
 	/* Load instructions */
 	#define nexti(inst) \
 		iowrite32(inst, \
@@ -204,12 +223,16 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 			nexti(assign_mem(cal_addr, cal_start_addr));
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(cal_addr, cal_size));
+			nexti(noop());
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(cal_addr, cal_size));
+			nexti(noop());
 			nexti(dma(1, cal_addr, cal_size));
 			nexti(add_mem(cal_addr, cal_size));
+			nexti(noop());
 			nexti(dma(1, cal_addr, cal_size));
-			//nexti(add_mem(dma_addr, dma_size));
+			nexti(add_mem(dma_addr, dma_size));
+			nexti(noop());
 		}
 
 		//nexti(add_mem(dma_addr, dma_size));
@@ -219,6 +242,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 		nexti(br_imm(label0));
         	dev_info(vdev->dev, "load live mipi program\n");
 		return;
+#if 0
 	} else if (mipi_playback_prog) {
 		static const unsigned long long alloc_size = 512*1024*1024;
 		//void *vaddr = memremap(pl_ddr_base_addr_ps_view, alloc_size, MEMREMAP_WB);
@@ -260,16 +284,18 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 		{ // repeat buf_siz times
 			label1 = lbl();
 			nexti(dma(0, dma_addr, dma_size));
+// !!! Wrong section: this is a playback section (remove?)
+			// TODO: fix calibration delivery for each quadrant (same data needs to be output 4 times)
 			// send calibration (in 4 chunks)
 			nexti(assign_mem(cal_addr, cal_start_addr));
 			nexti(dma(1, cal_addr, cal_size));
-			nexti(add_mem(cal_addr, cal_size));
+			//nexti(add_mem(cal_addr, cal_size));
 			nexti(dma(1, cal_addr, cal_size));
-			nexti(add_mem(cal_addr, cal_size));
+			//nexti(add_mem(cal_addr, cal_size));
 			nexti(dma(1, cal_addr, cal_size));
-			nexti(add_mem(cal_addr, cal_size));
+			//nexti(add_mem(cal_addr, cal_size));
 			nexti(dma(1, cal_addr, cal_size));
-			nexti(add_mem(dma_addr, dma_size));
+			//nexti(add_mem(dma_addr, dma_size));
 			nexti(add_imm(cnt, 1));
 			for (i = 0; i < 3; i++)
 				nexti(out0(irq_val)); // send an IRQ (3 clocks wide)
@@ -279,6 +305,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 		nexti(br_imm(label0));
         	dev_info(vdev->dev, "load mipi playback program\n");
 		return;
+#endif
 	} else if (op == 1) {
 		dload(cal_base_addr + cal_offs, cal_addr);
 		// calibration comes in 8MB chunks
@@ -294,7 +321,7 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 		nexti(dma(0, cal_addr, cal_size));
 		nexti(add_mem(cal_addr, cal_size));
 		nexti(hang());
-        	dev_info(vdev->dev, "load cal program\n");
+       	dev_info(vdev->dev, "load cal program\n");
 		return;
 	} else {
 		label0 = lbl();
@@ -304,10 +331,118 @@ static void load_program(struct vdm_device *vdev, unsigned op, unsigned cal_offs
 
 		{ // repeat buf_siz times
 			label1 = lbl();
-			nexti(dma(0, dma_addr, dma_size));
-			nexti(out1(dma_addr));
-			nexti(add_mem(dma_addr, dma_size));
+			// TODO: replace a single large DMA with 4 separate phases:
+			// 1. upper left frame DMAed into the uffer
+			// 2. upper right frame DMAed into the buffer
+			// 3. lower left frame
+			// 4. lower right frame
+			// The same frame size overall. ie. 2160*3840 == 4*1028 *1920
+			//nexti(dma(0, dma_addr, dma_size));
+			// DEBUG: noop kills the FSM
+#if 0
+			// This needs hd_line_size = 1080*1920
+			nexti(assign_mem(dma_line_addr, dma_addr));
+			nexti(dma(0, dma_line_addr, hd_line_size));
+			nexti(add_mem(dma_line_addr, hd_line_size));
+			nexti(dma(0, dma_line_addr, hd_line_size));
+			nexti(add_mem(dma_line_addr, hd_line_size));
+			nexti(dma(0, dma_line_addr, hd_line_size));
+			nexti(add_mem(dma_line_addr, hd_line_size));
+			nexti(dma(0, dma_line_addr, hd_line_size));
+#endif
+			nexti(zero(cnt1));
+			{
+#if 0
+				// Experimental: output one HD frame 4 times to the same address to the start of the DMA buffer
+				nexti(dma(0, dma_line_addr, quarter_dma_size));
+
+				// Experimental: VDM will not fetch next command until the number
+				// of outstanding data mover commands falls below 2.
+				// nexti(out1(dma_addr)); // done with one UHD frame signal output
+
+				nexti(add_mem(dma_line_addr, quarter_dma_size));
+				nexti(dma(0, dma_line_addr, quarter_dma_size));
+
+				nexti(add_mem(dma_line_addr, quarter_dma_size));
+				nexti(dma(0, dma_line_addr, quarter_dma_size));
+
+				nexti(add_mem(dma_line_addr, quarter_dma_size));
+				nexti(dma(0, dma_line_addr, quarter_dma_size));
+#endif
+#if 1
+				// TODO: this needs to go to the origin quad 2,3, and 4 not always to the same place
+				nexti(assign_mem(dma_line_addr, dma_addr));
+	        	label2 = lbl();
+				nexti(zero(cnt2));
+				// Loop through all 1080 lines
+				{
+					label3 = lbl();
+					nexti(dma(0, dma_line_addr, hd_line_size));
+					// Two line sizes increment to end up in the same upper left quadrant
+					nexti(add_mem(dma_line_addr, hd_line_size));
+					nexti(add_mem(dma_line_addr, hd_line_size));
+					nexti(add_imm(cnt2, 1));
+					nexti(brl(cnt2, num_hd_lines, label3));
+				}
+				nexti(add_imm(cnt1, 1));
+				nexti(brl(cnt1, num_halves, label2));
+
+				// fill right half
+				nexti(zero(cnt1));
+				nexti(assign_mem(dma_line_addr, dma_addr));
+				nexti(add_mem(dma_line_addr, hd_line_size));
+	        	label4 = lbl();
+				nexti(zero(cnt2));
+				// Loop through all 1080 lines
+				{
+					label5 = lbl();
+					nexti(dma(0, dma_line_addr, hd_line_size));
+					// Two line sizes increment to end up in the same upper left quadrant
+					nexti(add_mem(dma_line_addr, hd_line_size));
+					nexti(add_mem(dma_line_addr, hd_line_size));
+					nexti(add_imm(cnt2, 1));
+					nexti(brl(cnt2, num_hd_lines, label5));
+				}
+				nexti(add_imm(cnt1, 1));
+				nexti(brl(cnt1, num_halves, label4));
+#endif
+			}
+
+/* !!!!!!!!!!!!!!!!!!!
+
+	Maybe easier for now:
+		1) run everything at HD resolution
+		2) change MIPI into HD mode
+		3) change Xavier to receive 240 HD MIPI stream
+		4) encode HD stream at 240 FPS
+
+*/
+
+
+
+
+
+
+
+
+
+
+			// To avoid the problem with two nested data mover commands
+			// nexti(dma(0, dma_line_addr, 0));
+			// Is his signal sent out too early now?
+// Is this signal registered twice or something? Is there a FIFO?
+
+// TODO: might need to add a new command to wait for completion of the last data mover operation
+// before sending out the new address
+
+			nexti(out1(prev_dma_addr)); // done with one UHD frame signal output
+			nexti(noop());
+			nexti(noop());
+			nexti(noop());
+			nexti(noop());
+			nexti(assign_mem(prev_dma_addr, dma_addr));
 			nexti(add_imm(cnt, 1));
+			nexti(add_mem(dma_addr, dma_size));
 			for (i = 0; i < 3; i++)
 				nexti(out0(irq_val)); // send an IRQ
 			nexti(out0(zero_val)); // turn off IRQ line
@@ -419,7 +554,7 @@ vdm_debugfs_status_read(struct file *file, char __user *user_buf,
 	desc += sprintf(buff + desc,
 			"VDM CONSTANTS DUMP\n"
 			"----------------\n");
-	for (i = (consts_idx*4); i < (consts_idx*4 + 16*4); i += 4) {
+	for (i = (consts_idx*4); i < (consts_idx*4 + 32*4); i += 4) {
 		unsigned int word = ioread32(vdev->regs + PROGRAM_OFFSET + i);
 		desc += sprintf(buff + desc, "%04x %08x\n", i, word);
 	}
