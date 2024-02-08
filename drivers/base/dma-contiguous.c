@@ -242,10 +242,6 @@ static const struct reserved_mem_ops rmem_cma_ops = {
 	.device_release = rmem_cma_device_release,
 };
 
-
-#warning  early setup of the CMA reserves
-
-
 static int __init rmem_cma_setup(struct reserved_mem *rmem)
 {
 	phys_addr_t align = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
@@ -260,7 +256,6 @@ static int __init rmem_cma_setup(struct reserved_mem *rmem)
 
 	if ((rmem->base & mask) || (rmem->size & mask)) {
 		pr_err("Reserved memory: incorrect alignment of CMA region\n");
-		printk("base = %p mask = %p", rmem->base, mask);
 		return -EINVAL;
 	}
 

@@ -110,11 +110,7 @@ retry:
 		return NULL;
 	}
 
-	page = _vm_normal_page(vma, address, pte, true);
-				
-	//if (!strcmp(current->comm, "blc")) {
-		//printk("follow_page_pte() vm_normal_page() ret=%p\n", page);
-	//}
+	page = vm_normal_page(vma, address, pte);
 	if (!page && pte_devmap(pte) && (flags & FOLL_GET)) {
 		/*
 		 * Only return device mapping pages in the FOLL_GET case since
@@ -545,25 +541,13 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 	int write = (gup_flags & FOLL_WRITE);
 	int foreign = (gup_flags & FOLL_REMOTE);
 
-
-
-#warning is it failing here ??
-
-#if 0
-	/// This will crash since there is no PTE struct
-	//
-	if (vm_flags & (VM_IO | VM_PFNMAP)) {
-		printk("c_vma_flags failed %x", vm_flags);
+	if (vm_flags & (VM_IO | VM_PFNMAP))
 		return -EFAULT;
-	}
-#endif
 
 	if (write) {
 		if (!(vm_flags & VM_WRITE)) {
-			if (!(gup_flags & FOLL_FORCE)) {
-				//printk("c_vma_flags DOLL_FORCE");
+			if (!(gup_flags & FOLL_FORCE))
 				return -EFAULT;
-			}
 			/*
 			 * We used to let the write,force case do COW in a
 			 * VM_MAYWRITE VM_SHARED !VM_WRITE vma, so ptrace could
@@ -573,36 +557,25 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 			 * Anon pages in shared mappings are surprising: now
 			 * just reject it.
 			 */
-			if (!is_cow_mapping(vm_flags)) {
-				//printk("c_vma_flags cow");
+			if (!is_cow_mapping(vm_flags))
 				return -EFAULT;
-			}
 		}
 	} else if (!(vm_flags & VM_READ)) {
-#if 0
-		if (!(gup_flags & FOLL_FORCE)) {
-			printk("c_vma_flags DOLL_FORCE 2");
+		if (!(gup_flags & FOLL_FORCE))
 			return -EFAULT;
-		}
-#endif
-
 		/*
 		 * Is there actually any vma we can reach here which does not
 		 * have VM_MAYREAD set?
 		 */
-		if (!(vm_flags & VM_MAYREAD)) {
-			//printk("c_vma_flags MAY_READ");
+		if (!(vm_flags & VM_MAYREAD))
 			return -EFAULT;
-		}
 	}
 	/*
 	 * gups are always data accesses, not instruction
 	 * fetches, so execute=false here
 	 */
-	if (!arch_vma_access_permitted(vma, write, false, foreign)) {
-		//printk("c_vma_flags arch");
+	if (!arch_vma_access_permitted(vma, write, false, foreign))
 		return -EFAULT;
-	}
 	return 0;
 }
 
@@ -703,14 +676,8 @@ static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 				goto next_page;
 			}
 
-			//printk("fev->%p\n", vma);
-#warning seems to fail here (!vma)
-
-
-			if (!vma || check_vma_flags(vma, gup_flags)) {
-				//printk("c_vma_flags i=%d\n", i);
+			if (!vma || check_vma_flags(vma, gup_flags))
 				return i ? : -EFAULT;
-			}
 			if (is_vm_hugetlb_page(vma)) {
 				i = follow_hugetlb_page(mm, vma, pages, vmas,
 						&start, &nr_pages, i,
@@ -902,9 +869,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 	for (;;) {
 		ret = __get_user_pages(tsk, mm, start, nr_pages, flags, pages,
 				       vmas, locked);
-		//if (!strcmp(current->comm, "blc")) {
-			//printk("__get_user_pages() ret=%d\n", ret);
-		//}
 		if (!locked)
 			/* VM_FAULT_RETRY couldn't trigger, bypass */
 			return ret;
@@ -1683,8 +1647,6 @@ static int gup_p4d_range(pgd_t pgd, unsigned long addr, unsigned long end,
  * Like get_user_pages_fast() except it's IRQ-safe in that it won't fall back to
  * the regular GUP. It will only return non-negative values.
  */
-#warning This call fails with my mmap()
-
 int __get_user_pages_fast(unsigned long start, int nr_pages, int write,
 			  struct page **pages)
 {
@@ -1788,7 +1750,7 @@ int get_user_pages_fast(unsigned long start, int nr_pages, int write,
 		pages += nr;
 
 		ret = get_user_pages_unlocked(start, nr_pages - nr, pages,
-				/*FOLL_FORCE | */ (write ? FOLL_WRITE : 0));
+				write ? FOLL_WRITE : 0);
 
 		/* Have to be a bit careful with return values */
 		if (nr > 0) {

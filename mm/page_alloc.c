@@ -5293,10 +5293,8 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 	struct memblock_region *r = NULL, *tmp;
 #endif
 
-	if (highest_memmap_pfn < end_pfn - 1) {
+	if (highest_memmap_pfn < end_pfn - 1)
 		highest_memmap_pfn = end_pfn - 1;
-		printk("memmap_init_zone() highest_memmap_pfn = %lx\n", highest_memmap_pfn);
-	}
 
 	/*
 	 * Honor reservation requested by the driver for this ZONE_DEVICE

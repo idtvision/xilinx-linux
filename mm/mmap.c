@@ -2119,10 +2119,6 @@ struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 	struct vm_area_struct *vma;
 
 	/* Check the cache first. */
-
-#warning fails here??
-
-
 	vma = vmacache_find(mm, addr);
 	if (likely(vma))
 		return vma;
@@ -2407,7 +2403,6 @@ static int __init cmdline_parse_stack_guard_gap(char *p)
 __setup("stack_guard_gap=", cmdline_parse_stack_guard_gap);
 
 #ifdef CONFIG_STACK_GROWSUP
-#error
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
 {
 	return expand_upwards(vma, address);
@@ -2433,8 +2428,6 @@ int expand_stack(struct vm_area_struct *vma, unsigned long address)
 {
 	return expand_downwards(vma, address);
 }
-
-#warning fails here
 
 struct vm_area_struct *
 find_extend_vma(struct mm_struct *mm, unsigned long addr)

@@ -119,7 +119,6 @@ int valid_phys_addr_range(phys_addr_t addr, size_t size)
 	 * follows that /dev/mem read() calls should be able traverse
 	 * such boundaries.
 	 */
-	//return 1;
 	return memblock_is_region_memory(addr, size) &&
 	       memblock_is_map_memory(addr);
 }
@@ -129,12 +128,11 @@ int valid_phys_addr_range(phys_addr_t addr, size_t size)
  */
 int valid_mmap_phys_addr_range(unsigned long pfn, size_t size)
 {
-	//return 1;
 	return !(((pfn << PAGE_SHIFT) + size) & ~PHYS_MASK);
 }
 
 #ifdef CONFIG_STRICT_DEVMEM
-#error
+
 #include <linux/ioport.h>
 
 /*

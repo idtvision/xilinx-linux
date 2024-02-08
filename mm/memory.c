@@ -731,10 +731,10 @@ static void print_bad_pte(struct vm_area_struct *vma, unsigned long addr,
 	static unsigned long nr_unshown;
 
 	/*
-	 * Allow a burst of 6 reports, then keep quiet for that minute;
+	 * Allow a burst of 60 reports, then keep quiet for that minute;
 	 * or allow a steady drip of one report per second.
 	 */
-	if (nr_shown == 6) {
+	if (nr_shown == 60) {
 		if (time_before(jiffies, resume)) {
 			nr_unshown++;
 			return;
@@ -817,21 +817,7 @@ static void print_bad_pte(struct vm_area_struct *vma, unsigned long addr,
 # define HAVE_PTE_SPECIAL 1
 #else
 # define HAVE_PTE_SPECIAL 0
-#error
 #endif
-
-bool fpga_pfn(unsigned long pfn)
-{
-	static const unsigned long a1_size = 3*512*1024*1024 >> PAGE_SHIFT;
-	static const unsigned long a2_size = 512*1024*1024 >> PAGE_SHIFT;
-	static const unsigned long a1_from = 0x20000000 >> PAGE_SHIFT;
-	static const unsigned long a1_to = a1_from + a1_size;
-	static const unsigned long a2_from = 0x480000000LL >> PAGE_SHIFT;
-	static const unsigned long a2_to = a2_from + a2_size;
-
-	return (pfn >= a1_from && pfn < a1_to) || (pfn >= a2_from && pfn < a2_to);
-}
-
 struct page *_vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 			     pte_t pte, bool with_public_device)
 {
@@ -842,9 +828,8 @@ struct page *_vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 			goto check_pfn;
 		if (vma->vm_ops && vma->vm_ops->find_special_page)
 			return vma->vm_ops->find_special_page(vma, addr);
-		// Will this fix DIRECT_IO ????
-		//if (vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
-			//return NULL;
+		if (vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
+			return NULL;
 		if (is_zero_pfn(pfn))
 			return NULL;
 
@@ -862,24 +847,14 @@ struct page *_vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 		 */
 		if (likely(pfn <= highest_memmap_pfn)) {
 			struct page *page = pfn_to_page(pfn);
-//#error
-			// TODO: make my pages public?
+
 			if (is_device_public_page(page)) {
-				//if (!strcmp(current->comm, "blc")) {
-					//printk("is_device_public_page() 1 page=%p with_public_device=%d\n", page, with_public_device);
-				//}
 				if (with_public_device)
 					return page;
 				return NULL;
 			}
 		}
-		//print_bad_pte(vma, addr, pte, NULL);
-		//printk("print_bad_pte() 1 pfn_to_page(%lx)=%p; highest_memmap_pfn=%lx\n", pfn, pfn_to_page(pfn), highest_memmap_pfn);
-		//if (!strcmp(current->comm, "blc")) {
-		if (fpga_pfn(pfn)) {
-			//printk("print_bad_pte() 1 pfn_to_page(%lx)=%p\n", pfn, pfn_to_page(pfn));
-			return pfn_to_page(pfn);
-		}
+		print_bad_pte(vma, addr, pte, NULL);
 		return NULL;
 	}
 
@@ -904,12 +879,7 @@ struct page *_vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 		return NULL;
 check_pfn:
 	if (unlikely(pfn > highest_memmap_pfn)) {
-		//print_bad_pte(vma, addr, pte, NULL);
-		//if (!strcmp(current->comm, "blc")) {
-		if (fpga_pfn(pfn)) {
-			//printk("print_bad_pte() 2 pfn_to_page(%lx)=%p\n", pfn, pfn_to_page(pfn));
-			goto out;
-		}
+		print_bad_pte(vma, addr, pte, NULL);
 		return NULL;
 	}
 
@@ -1327,11 +1297,6 @@ again:
 	arch_enter_lazy_mmu_mode();
 	do {
 		pte_t ptent = *pte;
-/*
- * do not free fpga memory PTE here, avoid including a bad PTE into the free list.
- */
-		if (fpga_pfn(pte_pfn(ptent)))
-			continue;
 		if (pte_none(ptent))
 			continue;
 
@@ -2076,8 +2041,8 @@ static inline int remap_p4d_range(struct mm_struct *mm, pgd_t *pgd,
  *
  *  Note: this is only safe if the mm semaphore is held when called.
  */
-int remap_pfn_range_vm_io(struct vm_area_struct *vma, unsigned long addr,
-		    unsigned long pfn, unsigned long size, pgprot_t prot, bool do_vm_io)
+int remap_pfn_range(struct vm_area_struct *vma, unsigned long addr,
+		    unsigned long pfn, unsigned long size, pgprot_t prot)
 {
 	pgd_t *pgd;
 	unsigned long next;
@@ -2114,11 +2079,7 @@ int remap_pfn_range_vm_io(struct vm_area_struct *vma, unsigned long addr,
 	if (err)
 		return -EINVAL;
 
-	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
-	//printk("memmap flag setting vm_io = %d\n", do_vm_io);
-	//Don't do this, it breaks all mmap() calls
-	do_vm_io = 1;
-	if (do_vm_io) vma->vm_flags |= VM_IO | VM_PFNMAP;
+	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
 
 	BUG_ON(addr >= end);
 	pfn -= addr >> PAGE_SHIFT;
@@ -2136,11 +2097,6 @@ int remap_pfn_range_vm_io(struct vm_area_struct *vma, unsigned long addr,
 		untrack_pfn(vma, remap_pfn, PAGE_ALIGN(size));
 
 	return err;
-}
-EXPORT_SYMBOL(remap_pfn_range_vm_io);
-int remap_pfn_range(struct vm_area_struct *vma, unsigned long addr,
-		    unsigned long pfn, unsigned long size, pgprot_t prot){
-	return remap_pfn_range_vm_io(vma,addr,pfn,size,prot,1);
 }
 EXPORT_SYMBOL(remap_pfn_range);
 

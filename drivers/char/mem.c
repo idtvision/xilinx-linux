@@ -49,7 +49,6 @@ static inline unsigned long size_inside_page(unsigned long start,
 }
 
 #ifndef ARCH_HAS_VALID_PHYS_ADDR_RANGE
-#error
 static inline int valid_phys_addr_range(phys_addr_t addr, size_t count)
 {
 	return addr + count <= __pa(high_memory);
@@ -62,7 +61,6 @@ static inline int valid_mmap_phys_addr_range(unsigned long pfn, size_t size)
 #endif
 
 #ifdef CONFIG_STRICT_DEVMEM
-#error
 static inline int page_is_allowed(unsigned long pfn)
 {
 	return devmem_is_allowed(pfn);
@@ -368,13 +366,12 @@ static int mmap_mem(struct file *file, struct vm_area_struct *vma)
 
 	vma->vm_ops = &mmap_mem_ops;
 
-	/* Remap-pfn-range will NOT  mark the range VM_IO */
-	if (remap_pfn_range_vm_io(vma,
+	/* Remap-pfn-range will mark the range VM_IO */
+	if (remap_pfn_range(vma,
 			    vma->vm_start,
 			    vma->vm_pgoff,
 			    size,
-			    vma->vm_page_prot,
-				0)) {
+			    vma->vm_page_prot)) {
 		return -EAGAIN;
 	}
 	return 0;

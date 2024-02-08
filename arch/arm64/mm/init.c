@@ -223,10 +223,8 @@ static void __init reserve_elfcorehdr(void)
  */
 static phys_addr_t __init max_zone_dma_phys(void)
 {
-	//phys_addr_t offset = memblock_start_of_DRAM() & GENMASK_ULL(63, 32);
-	//return min(offset + (1ULL << 32), memblock_end_of_DRAM());
-#warning expanding max_zone_dma_phys() to beyond the PL DDR buffer space
-	return 0x480000000LL + 1024LL*1024*1024;
+	phys_addr_t offset = memblock_start_of_DRAM() & GENMASK_ULL(63, 32);
+	return min(offset + (1ULL << 32), memblock_end_of_DRAM());
 }
 
 #ifdef CONFIG_NUMA
@@ -255,7 +253,6 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 	/* 4GB maximum for 32-bit only capable devices */
 #ifdef CONFIG_ZONE_DMA
 	max_dma = PFN_DOWN(arm64_dma_phys_limit);
-	printk("arm64_dma_phys_limit=%llx", arm64_dma_phys_limit);
 	zone_size[ZONE_DMA] = max_dma - min;
 #endif
 	zone_size[ZONE_NORMAL] = max - max_dma;
@@ -266,7 +263,6 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 		unsigned long start = memblock_region_memory_base_pfn(reg);
 		unsigned long end = memblock_region_memory_end_pfn(reg);
 
-		printk("zone stasrt=%lx end=%lx\n", start, end);
 		if (start >= max)
 			continue;
 
@@ -289,13 +285,9 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 #endif /* CONFIG_NUMA */
 
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID
-#warning Here try to modify to bring in 0x4_8000_0000
 int pfn_valid(unsigned long pfn)
 {
-	pfn <<= PAGE_SHIFT;
-	// This hangs the kernel early
-	//return memblock_is_map_memory(pfn) || memblock_is_reserved(pfn);
-	return memblock_is_map_memory(pfn);
+	return memblock_is_map_memory(pfn << PAGE_SHIFT);
 }
 EXPORT_SYMBOL(pfn_valid);
 #endif
@@ -312,9 +304,6 @@ static void __init arm64_memory_present(void)
 	for_each_memblock(memory, reg) {
 		int nid = memblock_get_region_node(reg);
 
-		printk("calling memory_present on pfn start=%p end=%p\n",
-				memblock_region_memory_base_pfn(reg),
-				memblock_region_memory_end_pfn(reg));
 		memory_present(nid, memblock_region_memory_base_pfn(reg),
 				memblock_region_memory_end_pfn(reg));
 	}
@@ -332,7 +321,7 @@ static int __init early_mem(char *p)
 		return 1;
 
 	memory_limit = memparse(p, &p) & PAGE_MASK;
-	printk("Memory limited to %lldMB\n", memory_limit >> 20);
+	pr_notice("Memory limited to %lldMB\n", memory_limit >> 20);
 
 	return 0;
 }
@@ -373,10 +362,9 @@ static void __init fdt_enforce_memory_region(void)
 void __init arm64_memblock_init(void)
 {
 	const s64 linear_region_size = -(s64)PAGE_OFFSET;
-	printk("callling arm64_memblock_init()\n");
 
 	/* Handle linux,usable-memory-range property */
-	//fdt_enforce_memory_region();
+	fdt_enforce_memory_region();
 
 	/*
 	 * Ensure that the linear region takes up exactly half of the kernel
@@ -391,7 +379,6 @@ void __init arm64_memblock_init(void)
 	memstart_addr = round_down(memblock_start_of_DRAM(),
 				   ARM64_MEMSTART_ALIGN);
 
-#if 1
 	/*
 	 * Remove the memory that we will not be able to cover with the
 	 * linear mapping. Take care not to clip the kernel which may be
@@ -461,7 +448,6 @@ void __init arm64_memblock_init(void)
 					 ((range * memstart_offset_seed) >> 16);
 		}
 	}
-#endif
 
 	/*
 	 * Register the kernel text, kernel data, initrd, and initial

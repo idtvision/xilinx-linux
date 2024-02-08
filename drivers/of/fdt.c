@@ -1033,12 +1033,12 @@ int __init early_init_dt_scan_root(unsigned long node, const char *uname,
 	prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
 	if (prop)
 		dt_root_size_cells = be32_to_cpup(prop);
-	printk("dt_root_size_cells = %x\n", dt_root_size_cells);
+	pr_debug("dt_root_size_cells = %x\n", dt_root_size_cells);
 
 	prop = of_get_flat_dt_prop(node, "#address-cells", NULL);
 	if (prop)
 		dt_root_addr_cells = be32_to_cpup(prop);
-	printk("dt_root_addr_cells = %x\n", dt_root_addr_cells);
+	pr_debug("dt_root_addr_cells = %x\n", dt_root_addr_cells);
 
 	/* break now */
 	return 1;
@@ -1083,7 +1083,7 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 	endp = reg + (l / sizeof(__be32));
 	hotpluggable = of_get_flat_dt_prop(node, "hotpluggable", NULL);
 
-	printk("memory scan node %s, reg size %d,\n", uname, l);
+	pr_debug("memory scan node %s, reg size %d,\n", uname, l);
 
 	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
 		u64 base, size;
@@ -1093,7 +1093,7 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 
 		if (size == 0)
 			continue;
-		printk(" - %llx ,  %llx\n", (unsigned long long)base,
+		pr_debug(" - %llx ,  %llx\n", (unsigned long long)base,
 		    (unsigned long long)size);
 
 		early_init_dt_add_memory_arch(base, size);
