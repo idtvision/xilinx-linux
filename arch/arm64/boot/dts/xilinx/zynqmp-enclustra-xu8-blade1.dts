@@ -14,7 +14,7 @@
 
 #include "zynqmp.dtsi"
 #include "zynqmp-clk-ccf.dtsi"
-#include "zynq-enclustra-qspi64-parts.dtsi"
+#include "zynq-enclustra-qspi64-blade1-parts.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-zynqmp.h>
 #include <dt-bindings/phy/phy.h>
